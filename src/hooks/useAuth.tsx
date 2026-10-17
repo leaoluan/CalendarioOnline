@@ -21,7 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const profileRef = useRef<string | null>(null);
 
-  const fetchProfile = useCallback(async (userId: string) => {
+  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -35,76 +35,106 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) {
       profileRef.current = userId;
       setProfile(data as Profile);
+      return data as Profile;
     }
-    return data;
+    return null;
   }, []);
 
+  // Only used for initial load and sign-out detection
   useEffect(() => {
     let mounted = true;
-    let retryCount = 0;
 
-    const loadProfile = async (userId: string) => {
-      const data = await fetchProfile(userId);
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
-      if (!data && retryCount < 3) {
-        retryCount++;
-        setTimeout(() => mounted && loadProfile(userId), 800);
-      } else {
-        setLoading(false);
+      setSession(session);
+
+      if (session?.user) {
+        // Try to load profile, retry up to 3 times
+        for (let i = 0; i < 3; i++) {
+          const p = await fetchProfile(session.user.id);
+          if (!mounted) return;
+          if (p) break;
+          await new Promise(r => setTimeout(r, 600));
+        }
       }
+      setLoading(false);
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!mounted) return;
-      setSession(session);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
+    init();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (!mounted) return;
-      setSession(session);
 
       if (event === 'SIGNED_OUT') {
         profileRef.current = null;
         setProfile(null);
+        setSession(null);
         setLoading(false);
         return;
       }
 
-      if (event === 'SIGNED_IN' && session?.user) {
-        // Reset retry counter for new sign-in
-        retryCount = 0;
-        // Only fetch if we don't already have this user's profile
-        if (profileRef.current !== session.user.id) {
-          setProfile(null);
-          setLoading(true);
-          loadProfile(session.user.id);
-        }
+      // For SIGNED_IN, the signIn() function handles profile loading directly.
+      // We only update the session here.
+      if (event === 'SIGNED_IN' && newSession) {
+        setSession(newSession);
+        return;
       }
-      // For TOKEN_REFRESHED and other events, do nothing — keep current state
-    });
 
-    // Safety timeout: never stay loading forever
-    const safetyTimer = setTimeout(() => {
-      if (mounted) setLoading(false);
-    }, 10000);
+      // For TOKEN_REFRESHED, just update session silently
+      if (event === 'TOKEN_REFRESHED' && newSession) {
+        setSession(newSession);
+        return;
+      }
+    });
 
     return () => {
       mounted = false;
-      clearTimeout(safetyTimer);
       listener.subscription.unsubscribe();
     };
   }, [fetchProfile]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
+
+    // Immediately set session and fetch profile — don't wait for onAuthStateChange
+    setSession(data.session);
+
+    if (data.user) {
+      // Try to load profile with retries
+      let loadedProfile: Profile | null = null;
+      for (let i = 0; i < 3; i++) {
+        loadedProfile = await fetchProfile(data.user.id);
+        if (loadedProfile) break;
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      if (!loadedProfile) {
+        // Profile doesn't exist — create it as a fallback
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            email: data.user.email || email,
+            name: data.user.user_metadata?.name || email.split('@')[0],
+            role: 'VIEWER',
+          });
+        if (!insertError) {
+          loadedProfile = await fetchProfile(data.user.id);
+        }
+      }
+
+      if (loadedProfile) {
+        setLoading(false);
+        return { error: null };
+      } else {
+        return { error: 'Não foi possível carregar o perfil do usuário.' };
+      }
+    }
+
     return { error: null };
-  }, []);
+  }, [fetchProfile]);
 
   const signUp = useCallback(async (email: string, password: string, name: string, role?: string) => {
     const { data, error } = await supabase.auth.signUp({
@@ -129,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profileRef.current = null;
     setProfile(null);
     setSession(null);
+    setLoading(false);
   }, []);
 
   const refreshProfile = useCallback(async () => {
