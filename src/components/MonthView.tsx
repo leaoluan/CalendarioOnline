@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { CalendarEvent, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
-import { resolveEventColor, getCategoryName, matchesEventSearch } from '../services/storage';
+import { resolveEventColor, getCategoryName, matchesEventSearch, toLocalDateKey } from '../services/storage';
 
 interface MonthViewProps {
   currentDate: Date;
@@ -91,7 +91,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
   // Map events to date strings YYYY-MM-DD
   const eventsByDate = new Map<string, CalendarEvent[]>();
   events.forEach((ev) => {
-    const dateKey = ev.start.split('T')[0];
+    const dateKey = toLocalDateKey(ev.start);
     if (!eventsByDate.has(dateKey)) {
       eventsByDate.set(dateKey, []);
     }

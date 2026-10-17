@@ -815,7 +815,7 @@ export const EventModal: React.FC<EventModalProps> = ({
 
       {/* Mandatory User Confirmation Modal for Destructive Operations */}
       {confirmDialog && confirmDialog.isOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
           <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-amber-500/40 p-5 shadow-2xl text-slate-200">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 flex-shrink-0">

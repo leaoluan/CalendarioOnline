@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Video, CheckCircle2, Clock, Search, X } from 'lucide-react';
 import { CalendarEvent, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
-import { resolveEventColor, getCategoryName, matchesEventSearch } from '../services/storage';
+import { resolveEventColor, getCategoryName, matchesEventSearch, toLocalDateKey } from '../services/storage';
 
 interface WeekViewProps {
   currentDate: Date;
@@ -204,7 +204,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
               // Find events for this specific day
               const dayEvents = currentWeekEvents.filter(
-                (e) => e.start.split('T')[0] === dayIso
+                (e) => toLocalDateKey(e.start) === dayIso
               );
 
               return (

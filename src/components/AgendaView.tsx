@@ -15,7 +15,7 @@ import {
 import { CalendarEvent, CategoryDefinition } from '../types/calendar';
 import { exportToICS } from '../services/googleCalendar';
 import { sounds } from '../services/soundEffects';
-import { resolveEventColor, getCategoryName, matchesEventSearch } from '../services/storage';
+import { resolveEventColor, getCategoryName, matchesEventSearch, toLocalDateKey } from '../services/storage';
 
 interface AgendaViewProps {
   events: CalendarEvent[];
@@ -48,10 +48,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   };
 
   const now = new Date();
-  const todayIso = now.toISOString().split('T')[0];
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowIso = tomorrow.toISOString().split('T')[0];
+  const tomorrowIso = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
 
   const in7Days = new Date(now);
   in7Days.setDate(in7Days.getDate() + 7);
@@ -67,8 +68,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   });
 
   // Group events
-  const todayEvents = filteredEvents.filter((e) => e.start.split('T')[0] === todayIso);
-  const tomorrowEvents = filteredEvents.filter((e) => e.start.split('T')[0] === tomorrowIso);
+  const todayEvents = filteredEvents.filter((e) => toLocalDateKey(e.start) === todayIso);
+  const tomorrowEvents = filteredEvents.filter((e) => toLocalDateKey(e.start) === tomorrowIso);
   const next7DaysEvents = filteredEvents.filter((e) => {
     const d = new Date(e.start);
     return d > tomorrow && d <= in7Days;

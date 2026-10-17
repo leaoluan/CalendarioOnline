@@ -174,12 +174,14 @@ export const Header: React.FC<HeaderProps> = ({
     if (!text) return null;
     if (!query || !query.trim()) return <span>{text}</span>;
     const cleanQuery = query.trim();
-    const regex = new RegExp(`(${cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const escaped = cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
     const parts = text.split(regex);
+    const lowerQuery = cleanQuery.toLowerCase();
     return (
       <span>
         {parts.map((part, i) =>
-          regex.test(part) ? (
+          part.toLowerCase() === lowerQuery ? (
             <span key={i} className="bg-amber-400/30 text-amber-200 font-bold px-0.5 rounded">
               {part}
             </span>
@@ -190,7 +192,6 @@ export const Header: React.FC<HeaderProps> = ({
       </span>
     );
   };
-
   const handleSelectSearchResult = (event: CalendarEvent) => {
     sounds.playTactileClick();
     setIsSearchFocused(false);

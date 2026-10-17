@@ -386,6 +386,17 @@ export function getCategoryName(
 }
 
 /**
+ * Converts an ISO datetime string to a local YYYY-MM-DD date key.
+ * Using split('T')[0] would give the UTC date, which is wrong for events
+ * near midnight in non-UTC timezones (e.g. Brazil UTC-3).
+ */
+export function toLocalDateKey(isoString: string): string {
+  const d = new Date(isoString);
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
  * Checks whether an event matches a global search query across title, description, or location.
  */
 export function matchesEventSearch(event: CalendarEvent, query: string): boolean {

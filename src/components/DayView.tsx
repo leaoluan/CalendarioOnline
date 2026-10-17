@@ -2,7 +2,7 @@ import React from 'react';
 import { ChevronLeft, ChevronRight, Video, MapPin, Clock, Plus, CheckCircle2, Search, X } from 'lucide-react';
 import { CalendarEvent, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
-import { resolveEventColor, getCategoryName, matchesEventSearch } from '../services/storage';
+import { resolveEventColor, getCategoryName, matchesEventSearch, toLocalDateKey } from '../services/storage';
 
 interface DayViewProps {
   currentDate: Date;
@@ -26,7 +26,7 @@ export const DayView: React.FC<DayViewProps> = ({
   onClearSearch
 }) => {
   const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  const dateIso = currentDate.toISOString().split('T')[0];
+  const dateIso = `${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}-${pad(currentDate.getDate())}`;
 
   const prevDay = () => {
     sounds.playTactileClick();
@@ -48,7 +48,7 @@ export const DayView: React.FC<DayViewProps> = ({
   };
 
   const dayEvents = events
-    .filter((e) => e.start.split('T')[0] === dateIso)
+    .filter((e) => toLocalDateKey(e.start) === dateIso)
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
   const hours = Array.from({ length: 24 }).map((_, i) => i);
