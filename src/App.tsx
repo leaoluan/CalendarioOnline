@@ -194,17 +194,22 @@ function ChronosApp() {
     })();
   }, [profile?.id]);
 
-  // Firebase Auth init
+  // Firebase Auth init (wrapped in try/catch to prevent crashes)
   useEffect(() => {
-    const unsubscribe = initAuth(
-      (_user, token) => {
-        setAccessToken(token);
-        setGoogleConnected(true);
-      },
-      () => {
-        setAccessToken(null);
-      }
-    );
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = initAuth(
+        (_user, token) => {
+          setAccessToken(token);
+          setGoogleConnected(true);
+        },
+        () => {
+          setAccessToken(null);
+        }
+      );
+    } catch (e) {
+      console.warn('Firebase auth init skipped:', e);
+    }
     return () => {
       if (unsubscribe) unsubscribe();
     };

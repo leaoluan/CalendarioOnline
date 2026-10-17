@@ -604,11 +604,17 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
               className="flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-xl bg-slate-800/60 dark:bg-slate-900/60 border border-slate-700/60 hover:border-slate-500 transition active:scale-95"
             >
-              <img
-                src={activeUser.avatar}
-                alt={activeUser.name}
-                className="w-6 h-6 rounded-lg object-cover ring-1 ring-blue-500/50"
-              />
+              {activeUser.avatar ? (
+                <img
+                  src={activeUser.avatar}
+                  alt={activeUser.name}
+                  className="w-6 h-6 rounded-lg object-cover ring-1 ring-blue-500/50"
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-lg bg-blue-600/80 flex items-center justify-center text-[10px] font-bold text-white ring-1 ring-blue-500/50">
+                  {activeUser.name.charAt(0).toUpperCase()}
+                </div>
+              )}
               <span className="hidden md:inline text-xs font-medium text-slate-200 max-w-[80px] truncate">
                 {activeUser.name}
               </span>
@@ -637,7 +643,7 @@ export const Header: React.FC<HeaderProps> = ({
 
                 <div className="pt-2 pb-1">
                   <p className="px-3 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                    Alternar Conta de Usuário
+                    Conta Atual
                   </p>
                   {users.map((u) => (
                     <button
@@ -652,7 +658,13 @@ export const Header: React.FC<HeaderProps> = ({
                           : 'hover:bg-slate-800/60 text-slate-300'
                       }`}
                     >
-                      <img src={u.avatar} alt={u.name} className="w-6 h-6 rounded-lg object-cover" />
+                      {u.avatar ? (
+                        <img src={u.avatar} alt={u.name} className="w-6 h-6 rounded-lg object-cover" />
+                      ) : (
+                        <div className="w-6 h-6 rounded-lg bg-blue-600/80 flex items-center justify-center text-[10px] font-bold text-white">
+                          {u.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div className="flex-1 truncate">
                         <div className="font-medium truncate">{u.name}</div>
                         <div className="text-[10px] text-slate-400">{u.role}</div>
