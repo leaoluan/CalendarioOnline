@@ -215,9 +215,23 @@ export const WidgetDrawer: React.FC<WidgetDrawerProps> = ({
                     Próximo no Horizonte 24h
                   </div>
                   {nextEvent ? (
-                    <div className="mt-1.5 p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                    <div
+                      className="mt-1.5 p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between"
+                      style={{ borderLeft: `3px solid ${nextEvent.color || '#3b82f6'}` }}
+                    >
                       <div>
-                        <div className="text-xs font-bold text-white">{nextEvent.title}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="text-[9px] font-bold uppercase px-1 py-0.2 rounded"
+                            style={{
+                              backgroundColor: `${nextEvent.color || '#3b82f6'}25`,
+                              color: nextEvent.color || '#93c5fd'
+                            }}
+                          >
+                            {nextEvent.category || 'Geral'}
+                          </span>
+                          <span className="text-xs font-bold text-white">{nextEvent.title}</span>
+                        </div>
                         <div className="text-[10px] text-slate-300 font-mono mt-0.5">
                           {new Date(nextEvent.start).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} -{' '}
                           {new Date(nextEvent.end).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
@@ -242,14 +256,24 @@ export const WidgetDrawer: React.FC<WidgetDrawerProps> = ({
                     Agenda do Dia ({upcomingEvents.slice(0, 3).length} eventos)
                   </div>
                   {upcomingEvents.slice(0, 3).map((ev) => (
-                    <div key={ev.id} className="p-2 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center justify-between">
+                    <div
+                      key={ev.id}
+                      className="p-2 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center justify-between"
+                      style={{ borderLeft: `3px solid ${ev.color || '#3b82f6'}` }}
+                    >
                       <div className="truncate">
                         <span className="font-bold text-white truncate block">{ev.title}</span>
                         <span className="text-[10px] text-slate-400 font-mono">
                           {new Date(ev.start).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                      <span
+                        className="text-[9px] uppercase px-1.5 py-0.5 rounded font-semibold"
+                        style={{
+                          backgroundColor: `${ev.color || '#3b82f6'}25`,
+                          color: ev.color || '#93c5fd'
+                        }}
+                      >
                         {ev.category}
                       </span>
                     </div>

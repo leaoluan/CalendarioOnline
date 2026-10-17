@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   ChevronLeft,
   ChevronRight,
   Plus,
   Video,
   CheckCircle2,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Search,
+  X
 } from 'lucide-react';
-import { CalendarEvent } from '../types/calendar';
+import { CalendarEvent, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
+import { resolveEventColor, getCategoryName, matchesEventSearch } from '../services/storage';
 
 interface MonthViewProps {
   currentDate: Date;
@@ -17,6 +20,9 @@ interface MonthViewProps {
   onSelectEvent: (event: CalendarEvent) => void;
   onOpenCreateEvent: (presetStart?: string) => void;
   onDayClick?: (dayDate: Date) => void;
+  categories?: CategoryDefinition[];
+  searchQuery?: string;
+  onClearSearch?: () => void;
 }
 
 export const MonthView: React.FC<MonthViewProps> = ({
@@ -25,7 +31,10 @@ export const MonthView: React.FC<MonthViewProps> = ({
   events,
   onSelectEvent,
   onOpenCreateEvent,
-  onDayClick
+  onDayClick,
+  categories,
+  searchQuery = '',
+  onClearSearch
 }) => {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -89,11 +98,16 @@ export const MonthView: React.FC<MonthViewProps> = ({
     eventsByDate.get(dateKey)!.push(ev);
   });
 
+  const hasSearch = Boolean(searchQuery && searchQuery.trim());
+  const totalSearchMatches = hasSearch
+    ? events.filter((e) => matchesEventSearch(e, searchQuery)).length
+    : 0;
+
   return (
     <div className="flex-1 w-full h-full flex flex-col min-h-0 bg-transparent select-none">
       
       {/* Month Toolbar */}
-      <div className="flex-shrink-0 flex items-center justify-between px-3 sm:px-6 py-2 border-b border-white/10 dark:border-white/5">
+      <div className="flex-shrink-0 flex items-center justify-between px-3 sm:px-6 py-2 border-b border-white/10 dark:border-white/5 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight capitalize">
             {monthNames[month]} <span className="text-slate-400 font-medium">{year}</span>
@@ -105,6 +119,25 @@ export const MonthView: React.FC<MonthViewProps> = ({
             Hoje
           </button>
         </div>
+
+        {/* Search Active Notification Badge */}
+        {hasSearch && (
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs animate-in fade-in">
+            <Search className="w-3.5 h-3.5 text-blue-400" />
+            <span>
+              Filtrando por: <strong>"{searchQuery}"</strong> ({totalSearchMatches} no total)
+            </span>
+            {onClearSearch && (
+              <button
+                onClick={onClearSearch}
+                className="p-0.5 rounded-full hover:bg-blue-500/30 text-blue-300 hover:text-white transition"
+                title="Limpar busca"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5">
           <button
@@ -142,25 +175,19 @@ export const MonthView: React.FC<MonthViewProps> = ({
           let isOtherMonth = false;
 
           if (index < startDayOfWeek) {
-            // Previous month
-            dayNumber = daysInPrevMonth - startDayOfWeek + index + 1;
-            cellMonth = month - 1;
-            if (cellMonth < 0) {
-              cellMonth = 11;
-              cellYear = year - 1;
-            }
+            // Day from previous month
+            dayNumber = daysInPrevMonth - (startDayOfWeek - index - 1);
+            cellMonth = month === 0 ? 11 : month - 1;
+            cellYear = month === 0 ? year - 1 : year;
             isOtherMonth = true;
           } else if (index >= startDayOfWeek + daysInMonth) {
-            // Next month
+            // Day from next month
             dayNumber = index - (startDayOfWeek + daysInMonth) + 1;
-            cellMonth = month + 1;
-            if (cellMonth > 11) {
-              cellMonth = 0;
-              cellYear = year + 1;
-            }
+            cellMonth = month === 11 ? 0 : month + 1;
+            cellYear = month === 11 ? year + 1 : year;
             isOtherMonth = true;
           } else {
-            // Current month
+            // Current month day
             dayNumber = index - startDayOfWeek + 1;
           }
 
@@ -169,14 +196,22 @@ export const MonthView: React.FC<MonthViewProps> = ({
           const dayEvents = eventsByDate.get(dateKey) || [];
           const isToday = isCurrentDay(dayNumber, cellMonth, cellYear);
 
+          // Check if day cell contains any event matching global search query
+          const hasMatchingEvent =
+            hasSearch && dayEvents.some((ev) => matchesEventSearch(ev, searchQuery));
+
           return (
             <div
-              key={dateKey}
+              key={index}
               onClick={() => {
-                if (onDayClick) onDayClick(new Date(cellYear, cellMonth, dayNumber));
+                if (onDayClick) {
+                  onDayClick(new Date(cellYear, cellMonth, dayNumber));
+                }
               }}
-              className={`group relative flex flex-col p-1 sm:p-2 transition-colors min-h-[70px] sm:min-h-[90px] overflow-hidden ${
-                isOtherMonth
+              className={`p-1 sm:p-2 flex flex-col justify-between transition-colors relative group min-h-[75px] sm:min-h-[100px] cursor-pointer ${
+                hasMatchingEvent
+                  ? 'ring-2 ring-blue-500/60 bg-blue-900/20'
+                  : isOtherMonth
                   ? 'bg-slate-950/40 text-slate-600'
                   : isToday
                   ? 'bg-blue-950/20 text-slate-100'
@@ -215,6 +250,8 @@ export const MonthView: React.FC<MonthViewProps> = ({
               {/* Day Events Pills */}
               <div className="flex-1 flex flex-col gap-1 overflow-hidden">
                 {dayEvents.slice(0, 3).map((ev) => {
+                  const eventColor = resolveEventColor(ev, categories);
+                  const isMatch = hasSearch ? matchesEventSearch(ev, searchQuery) : true;
                   const startTime = ev.isAllDay
                     ? ''
                     : new Date(ev.start).toLocaleTimeString('pt-BR', {
@@ -230,13 +267,15 @@ export const MonthView: React.FC<MonthViewProps> = ({
                         sounds.playTactileClick();
                         onSelectEvent(ev);
                       }}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium truncate cursor-pointer transition shadow-xs hover:brightness-110 active:scale-98"
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium truncate cursor-pointer transition shadow-xs hover:brightness-110 active:scale-98 ${
+                        hasSearch && !isMatch ? 'opacity-30' : ''
+                      } ${hasSearch && isMatch ? 'ring-1 ring-white/50 font-bold' : ''}`}
                       style={{
-                        backgroundColor: `${ev.color}25`,
-                        color: ev.color || '#93c5fd',
-                        borderLeft: `3px solid ${ev.color || '#3b82f6'}`
+                        backgroundColor: `${eventColor}25`,
+                        color: eventColor || '#93c5fd',
+                        borderLeft: `3px solid ${eventColor || '#3b82f6'}`
                       }}
-                      title={`${ev.title} (${startTime || 'Dia todo'})`}
+                      title={`${ev.title} (${startTime || 'Dia todo'}) - Categoria: ${getCategoryName(ev.category, categories)}`}
                     >
                       {ev.hangoutLink && <Video className="w-2.5 h-2.5 flex-shrink-0" />}
                       <span className="truncate">

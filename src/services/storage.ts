@@ -332,3 +332,70 @@ export function saveUserCategories(userId: string, categories: CategoryDefinitio
   }
 }
 
+/**
+ * Resolves the display color for an event, prioritizing the event's direct color,
+ * then looking up the category's assigned color, and finally defaulting to blue.
+ */
+export function resolveEventColor(
+  event: CalendarEvent,
+  categories?: CategoryDefinition[]
+): string {
+  if (event.color && event.color.startsWith('#')) {
+    return event.color;
+  }
+  if (categories && event.category) {
+    const matched = categories.find(
+      (c) =>
+        c.id.toLowerCase() === event.category.toLowerCase() ||
+        c.name.toLowerCase() === event.category.toLowerCase()
+    );
+    if (matched?.color) return matched.color;
+  }
+  const defaultMatch = DEFAULT_CATEGORIES.find(
+    (c) =>
+      c.id.toLowerCase() === (event.category || '').toLowerCase() ||
+      c.name.toLowerCase() === (event.category || '').toLowerCase()
+  );
+  if (defaultMatch?.color) return defaultMatch.color;
+  return '#3b82f6';
+}
+
+/**
+ * Resolves the human-readable category name for an event.
+ */
+export function getCategoryName(
+  categoryId: string | undefined,
+  categories?: CategoryDefinition[]
+): string {
+  if (!categoryId) return 'Geral';
+  if (categories) {
+    const match = categories.find(
+      (c) =>
+        c.id.toLowerCase() === categoryId.toLowerCase() ||
+        c.name.toLowerCase() === categoryId.toLowerCase()
+    );
+    if (match) return match.name;
+  }
+  const defaultMatch = DEFAULT_CATEGORIES.find(
+    (c) =>
+      c.id.toLowerCase() === categoryId.toLowerCase() ||
+      c.name.toLowerCase() === categoryId.toLowerCase()
+  );
+  if (defaultMatch) return defaultMatch.name;
+  return categoryId.charAt(0).toUpperCase() + categoryId.slice(1);
+}
+
+/**
+ * Checks whether an event matches a global search query across title, description, or location.
+ */
+export function matchesEventSearch(event: CalendarEvent, query: string): boolean {
+  if (!query || !query.trim()) return true;
+  const q = query.toLowerCase().trim();
+  const titleMatch = (event.title || '').toLowerCase().includes(q);
+  const descMatch = (event.description || '').toLowerCase().includes(q);
+  const locMatch = (event.location || '').toLowerCase().includes(q);
+  const catMatch = (event.category || '').toLowerCase().includes(q);
+  return titleMatch || descMatch || locMatch || catMatch;
+}
+
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar,
   Clock,
@@ -17,10 +17,17 @@ import {
   Cloud,
   CheckCircle2,
   Download,
-  Users
+  Users,
+  Search,
+  X,
+  MapPin,
+  Calendar as CalendarIcon,
+  ChevronRight,
+  Tag
 } from 'lucide-react';
-import { UserProfile, NotificationItem } from '../types/calendar';
+import { UserProfile, CalendarEvent, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
+import { resolveEventColor, getCategoryName, matchesEventSearch } from '../services/storage';
 
 interface HeaderProps {
   currentView: 'month' | 'week' | 'day' | 'agenda' | 'horizon24h' | 'admin';
@@ -44,6 +51,14 @@ interface HeaderProps {
   setTheme: (theme: 'dark' | 'light' | 'oled' | 'system') => void;
   googleConnected: boolean;
   onGoogleSignIn: () => void;
+
+  // Global Search
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  events: CalendarEvent[];
+  categories: CategoryDefinition[];
+  onSelectEvent: (event: CalendarEvent) => void;
+  onNavigateToDate?: (date: Date, view?: 'month' | 'week' | 'day') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -67,13 +82,25 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   setTheme,
   googleConnected,
-  onGoogleSignIn
+  onGoogleSignIn,
+  searchQuery,
+  setSearchQuery,
+  events,
+  categories,
+  onSelectEvent,
+  onNavigateToDate
 }) => {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Digital clock
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -87,6 +114,39 @@ export const Header: React.FC<HeaderProps> = ({
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Global keyboard shortcut: pressing "/" or "Ctrl+K" / "Cmd+K" focuses search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) ||
+        ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setIsSearchFocused(true);
+      } else if (e.key === 'Escape') {
+        if (isSearchFocused || searchQuery) {
+          setIsSearchFocused(false);
+          searchInputRef.current?.blur();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSearchFocused, searchQuery]);
+
+  // Click outside search container to close results popover
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setIsSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const toggleFullscreen = () => {
@@ -103,6 +163,48 @@ export const Header: React.FC<HeaderProps> = ({
     if (theme === 'dark') setTheme('oled');
     else if (theme === 'oled') setTheme('light');
     else setTheme('dark');
+  };
+
+  // Filter events matching search across title, description, location
+  const matchingEvents = searchQuery.trim()
+    ? events.filter((ev) => matchesEventSearch(ev, searchQuery))
+    : [];
+
+  const highlightMatch = (text: string | undefined, query: string) => {
+    if (!text) return null;
+    if (!query || !query.trim()) return <span>{text}</span>;
+    const cleanQuery = query.trim();
+    const regex = new RegExp(`(${cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+    return (
+      <span>
+        {parts.map((part, i) =>
+          regex.test(part) ? (
+            <span key={i} className="bg-amber-400/30 text-amber-200 font-bold px-0.5 rounded">
+              {part}
+            </span>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </span>
+    );
+  };
+
+  const handleSelectSearchResult = (event: CalendarEvent) => {
+    sounds.playTactileClick();
+    setIsSearchFocused(false);
+    onSelectEvent(event);
+  };
+
+  const handleNavigateToResultDate = (e: React.MouseEvent, event: CalendarEvent) => {
+    e.stopPropagation();
+    sounds.playTactileClick();
+    setIsSearchFocused(false);
+    if (onNavigateToDate) {
+      const dt = new Date(event.start);
+      onNavigateToDate(dt, 'day');
+    }
   };
 
   return (
@@ -129,7 +231,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Live Clock Horizon Ribbon Badge */}
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/60 dark:bg-slate-900/60 border border-slate-700/50 text-slate-200 text-xs font-mono">
+          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/60 dark:bg-slate-900/60 border border-slate-700/50 text-slate-200 text-xs font-mono">
             <Clock className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
             <span>{timeStr}</span>
           </div>
@@ -144,6 +246,171 @@ export const Header: React.FC<HeaderProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">v2.5.1 Disponível</span>
             </button>
+          )}
+        </div>
+
+        {/* Global Search Bar (Responsive with Live Dropdown) */}
+        <div ref={searchContainerRef} className="relative flex-1 max-w-xs sm:max-w-sm md:max-w-md">
+          <div
+            className={`relative flex items-center w-full rounded-xl bg-slate-900/80 border transition-all duration-200 ${
+              isSearchFocused
+                ? 'border-blue-500 ring-2 ring-blue-500/30 shadow-lg shadow-blue-500/20'
+                : searchQuery
+                ? 'border-blue-500/60'
+                : 'border-slate-700/70 hover:border-slate-600'
+            }`}
+          >
+            <Search className="w-4 h-4 text-slate-400 ml-3 flex-shrink-0" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              placeholder="Buscar título, local, descrição... (/)"
+              className="w-full bg-transparent pl-2.5 pr-8 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none"
+            />
+
+            {/* Clear Button or Hotkey Badge */}
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute right-2 p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition"
+                title="Limpar busca (Esc)"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <div className="hidden sm:flex items-center gap-0.5 absolute right-2 pointer-events-none text-[10px] font-mono text-slate-500 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700">
+                <span>/</span>
+              </div>
+            )}
+          </div>
+
+          {/* Search Results Dropdown Popover */}
+          {isSearchFocused && searchQuery.trim() && (
+            <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-2xl overflow-hidden z-50 text-slate-200 max-h-96 flex flex-col animate-in fade-in slide-in-from-top-2 duration-150">
+              
+              {/* Header summary */}
+              <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs bg-slate-950/40">
+                <span className="font-semibold text-slate-300">
+                  {matchingEvents.length === 0
+                    ? 'Nenhum resultado'
+                    : `${matchingEvents.length} evento(s) encontrado(s)`}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Esc para fechar
+                </span>
+              </div>
+
+              {/* Event list */}
+              <div className="overflow-y-auto divide-y divide-slate-800/60">
+                {matchingEvents.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    <p>Nenhum evento corresponde a "<span className="text-white font-medium">{searchQuery}</span>".</p>
+                    <button
+                      onClick={() => {
+                        setIsSearchFocused(false);
+                        onOpenCreateEvent();
+                      }}
+                      className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition"
+                    >
+                      <span>+ Criar evento com este título</span>
+                    </button>
+                  </div>
+                ) : (
+                  matchingEvents.map((ev) => {
+                    const eventColor = resolveEventColor(ev, categories);
+                    const categoryName = getCategoryName(ev.category, categories);
+                    const startDate = new Date(ev.start);
+                    const endDate = new Date(ev.end);
+                    const dateFormatted = startDate.toLocaleDateString('pt-BR', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short'
+                    });
+                    const timeFormatted = ev.isAllDay
+                      ? 'Dia todo'
+                      : `${startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={() => handleSelectSearchResult(ev)}
+                        className="p-3 hover:bg-slate-800/60 transition cursor-pointer flex items-center justify-between gap-3 group"
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          {/* Category indicator bar with assigned color */}
+                          <div
+                            className="w-2.5 self-stretch rounded-full flex-shrink-0"
+                            style={{ backgroundColor: eventColor }}
+                          />
+
+                          <div className="min-w-0">
+                            {/* Title with query highlight */}
+                            <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-blue-300 transition truncate">
+                              {highlightMatch(ev.title, searchQuery)}
+                            </h4>
+
+                            {/* Date, Time and Category badge */}
+                            <div className="flex items-center gap-2 mt-1 flex-wrap text-[11px]">
+                              <span className="font-mono text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700/80">
+                                {dateFormatted} • {timeFormatted}
+                              </span>
+
+                              {/* Category pill reflecting category color */}
+                              <span
+                                className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded border"
+                                style={{
+                                  backgroundColor: `${eventColor}25`,
+                                  borderColor: `${eventColor}50`,
+                                  color: eventColor
+                                }}
+                              >
+                                {categoryName}
+                              </span>
+                            </div>
+
+                            {/* Location */}
+                            {ev.location && (
+                              <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1 truncate">
+                                <MapPin className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                                <span className="truncate">{highlightMatch(ev.location, searchQuery)}</span>
+                              </div>
+                            )}
+
+                            {/* Description snippet */}
+                            {ev.description && (
+                              <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                                {highlightMatch(ev.description, searchQuery)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Quick Action Button: Jump to Date */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => handleNavigateToResultDate(e, ev)}
+                            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] text-slate-300 hover:text-white transition"
+                            title="Ir para esta data na agenda"
+                          >
+                            <CalendarIcon className="w-3 h-3 text-blue-400" />
+                            <span>Ver data</span>
+                          </button>
+                          <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition" />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           )}
         </div>
 
@@ -325,7 +592,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenSettings}
             className="p-1.5 rounded-xl bg-slate-800/60 dark:bg-slate-900/60 border border-slate-700/60 hover:border-slate-500 text-slate-300 hover:text-white transition"
-            title="Configurações, Gestos e Transparência"
+            title="Configurações, Categorias, Gestos e Transparência"
           >
             <Settings className="w-4 h-4" />
           </button>

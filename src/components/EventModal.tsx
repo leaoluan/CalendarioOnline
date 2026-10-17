@@ -79,6 +79,7 @@ export const EventModal: React.FC<EventModalProps> = ({
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#f97316');
+  const [updateCategoryColorDefault, setUpdateCategoryColorDefault] = useState(false);
 
   // AI Natural Language input
   const [aiPrompt, setAiPrompt] = useState('');
@@ -260,6 +261,15 @@ export const EventModal: React.FC<EventModalProps> = ({
       };
 
       await onSaveEvent(eventData);
+
+      // If user chose to update default color for this category
+      if (updateCategoryColorDefault && onAddCategory && selectedCategoryObj) {
+        onAddCategory({
+          ...selectedCategoryObj,
+          color
+        });
+      }
+
       sounds.playSyncSuccess();
       onClose();
     } catch (e) {
@@ -556,6 +566,55 @@ export const EventModal: React.FC<EventModalProps> = ({
                       <span className="text-[10px] text-slate-400 hover:text-white">Mais tons</span>
                     </label>
                   </div>
+
+                  {/* Option to set as default color for this category */}
+                  {selectedCategoryObj && (
+                    <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer pt-2 mt-1 border-t border-slate-700/40">
+                      <input
+                        type="checkbox"
+                        checked={updateCategoryColorDefault}
+                        onChange={(e) => setUpdateCategoryColorDefault(e.target.checked)}
+                        className="rounded bg-slate-800 text-blue-600 focus:ring-0"
+                      />
+                      <span>
+                        Definir <span className="font-semibold" style={{ color }}>{color}</span> como cor padrão da categoria <strong>{selectedCategoryObj.name}</strong>
+                      </span>
+                    </label>
+                  )}
+                </div>
+
+                {/* Live Calendar Card Preview */}
+                <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3 shadow-inner">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="w-2.5 h-9 rounded-full flex-shrink-0 transition-colors"
+                      style={{ backgroundColor: color || '#3b82f6' }}
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border transition-colors"
+                          style={{
+                            backgroundColor: `${color || '#3b82f6'}25`,
+                            borderColor: `${color || '#3b82f6'}50`,
+                            color: color || '#3b82f6'
+                          }}
+                        >
+                          {selectedCategoryObj?.name || category}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          {isAllDay ? 'Dia todo' : `${start ? start.split('T')[1] : '09:00'} - ${end ? end.split('T')[1] : '10:00'}`}
+                        </span>
+                        {location && <span className="text-[10px] text-slate-400 truncate">• {location}</span>}
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">
+                        {title.trim() || 'Pré-visualização do evento no calendário...'}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider flex-shrink-0">
+                    Visualização
+                  </span>
                 </div>
               </div>
 

@@ -87,6 +87,7 @@ export default function App() {
     'month' | 'week' | 'day' | 'agenda' | 'horizon24h' | 'admin'
   >(activeUser.preferences.defaultView || 'month');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
 
   // Google Calendar integration
   const [googleConnected, setGoogleConnected] = useState<boolean>(activeUser.isGoogleConnected);
@@ -629,6 +630,18 @@ export default function App() {
         setTheme={setTheme}
         googleConnected={googleConnected}
         onGoogleSignIn={handleGoogleSignIn}
+        searchQuery={globalSearchQuery}
+        setSearchQuery={setGlobalSearchQuery}
+        events={events}
+        categories={categories}
+        onSelectEvent={(ev) => {
+          setEventToEdit(ev);
+          setIsEventModalOpen(true);
+        }}
+        onNavigateToDate={(targetDate, targetView) => {
+          setCurrentDate(targetDate);
+          if (targetView) setCurrentView(targetView);
+        }}
       />
 
       {/* Main Interactive Screen with Custom Gestures */}
@@ -655,6 +668,9 @@ export default function App() {
               }}
               onSyncGoogle={syncWithGoogleCalendar}
               isSyncing={isSyncing}
+              categories={categories}
+              searchQuery={globalSearchQuery}
+              onClearSearch={() => setGlobalSearchQuery('')}
             />
           )}
 
@@ -676,6 +692,9 @@ export default function App() {
                 setCurrentDate(day);
                 setCurrentView('day');
               }}
+              categories={categories}
+              searchQuery={globalSearchQuery}
+              onClearSearch={() => setGlobalSearchQuery('')}
             />
           )}
 
@@ -693,6 +712,9 @@ export default function App() {
                 setPresetStart(time);
                 setIsEventModalOpen(true);
               }}
+              categories={categories}
+              searchQuery={globalSearchQuery}
+              onClearSearch={() => setGlobalSearchQuery('')}
             />
           )}
 
@@ -710,6 +732,9 @@ export default function App() {
                 setPresetStart(time);
                 setIsEventModalOpen(true);
               }}
+              categories={categories}
+              searchQuery={globalSearchQuery}
+              onClearSearch={() => setGlobalSearchQuery('')}
             />
           )}
 
@@ -726,6 +751,8 @@ export default function App() {
                 setIsEventModalOpen(true);
               }}
               categories={categories}
+              searchQuery={globalSearchQuery}
+              onSearchQueryChange={setGlobalSearchQuery}
             />
           )}
 

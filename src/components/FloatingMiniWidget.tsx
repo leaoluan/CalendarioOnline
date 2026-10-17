@@ -111,10 +111,19 @@ export const FloatingMiniWidget: React.FC<FloatingMiniWidgetProps> = ({
                 onOpenEvent(nextEvent);
               }}
               className="p-2.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 cursor-pointer transition shadow-sm"
+              style={{ borderLeft: `4px solid ${nextEvent.color || '#3b82f6'}` }}
             >
               <div className="flex items-center justify-between text-[10px] text-blue-300 font-bold uppercase">
-                <span>Próximo Compromisso</span>
-                <span>
+                <span
+                  className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase"
+                  style={{
+                    backgroundColor: `${nextEvent.color || '#3b82f6'}30`,
+                    color: nextEvent.color || '#93c5fd'
+                  }}
+                >
+                  {nextEvent.category || 'Geral'}
+                </span>
+                <span className="font-mono text-slate-300">
                   {new Date(nextEvent.start).toLocaleTimeString('pt-BR', {
                     hour: '2-digit',
                     minute: '2-digit'

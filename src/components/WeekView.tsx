@@ -1,7 +1,8 @@
 import React, { useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Video, CheckCircle2, Clock } from 'lucide-react';
-import { CalendarEvent } from '../types/calendar';
+import { ChevronLeft, ChevronRight, Video, CheckCircle2, Clock, Search, X } from 'lucide-react';
+import { CalendarEvent, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
+import { resolveEventColor, getCategoryName, matchesEventSearch } from '../services/storage';
 
 interface WeekViewProps {
   currentDate: Date;
@@ -9,6 +10,9 @@ interface WeekViewProps {
   events: CalendarEvent[];
   onSelectEvent: (event: CalendarEvent) => void;
   onOpenCreateEvent: (presetStart?: string) => void;
+  categories?: CategoryDefinition[];
+  searchQuery?: string;
+  onClearSearch?: () => void;
 }
 
 export const WeekView: React.FC<WeekViewProps> = ({
@@ -16,7 +20,10 @@ export const WeekView: React.FC<WeekViewProps> = ({
   setCurrentDate,
   events,
   onSelectEvent,
-  onOpenCreateEvent
+  onOpenCreateEvent,
+  categories,
+  searchQuery = '',
+  onClearSearch
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -66,30 +73,36 @@ export const WeekView: React.FC<WeekViewProps> = ({
     );
   };
 
-  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   const hours = Array.from({ length: 24 }).map((_, i) => i);
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
-  // Filter events for the week
-  const weekStartMs = weekDays[0].getTime();
-  const weekEndMs = weekDays[6].getTime() + 86400000;
+  // Current time line position (minutes from 00:00)
+  const currentMinutesFromMidnight = now.getHours() * 60 + now.getMinutes();
 
+  const startFormatted = weekDays[0].toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+  const endFormatted = weekDays[6].toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  // Filter current week events
+  const startMs = weekDays[0].getTime();
+  const endMs = weekDays[6].getTime() + 86400000;
   const currentWeekEvents = events.filter((e) => {
-    const s = new Date(e.start).getTime();
-    return s >= weekStartMs && s < weekEndMs;
+    const t = new Date(e.start).getTime();
+    return t >= startMs && t <= endMs;
   });
 
-  // Calculate current time line position
-  const currentMinutesFromMidnight = now.getHours() * 60 + now.getMinutes();
+  const hasSearch = Boolean(searchQuery && searchQuery.trim());
+  const matchingCount = hasSearch
+    ? currentWeekEvents.filter((e) => matchesEventSearch(e, searchQuery)).length
+    : 0;
 
   return (
     <div className="flex-1 w-full h-full flex flex-col min-h-0 bg-transparent select-none">
       
       {/* Week Toolbar */}
-      <div className="flex-shrink-0 flex items-center justify-between px-3 sm:px-6 py-2 border-b border-white/10 dark:border-white/5">
+      <div className="flex-shrink-0 flex items-center justify-between px-3 sm:px-6 py-2 border-b border-white/10 dark:border-white/5 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-            {weekDays[0].toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })} –{' '}
-            {weekDays[6].toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {startFormatted} – {endFormatted}
           </h2>
           <button
             onClick={goToToday}
@@ -99,24 +112,45 @@ export const WeekView: React.FC<WeekViewProps> = ({
           </button>
         </div>
 
+        {/* Search Active Notification Badge */}
+        {hasSearch && (
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs animate-in fade-in">
+            <Search className="w-3.5 h-3.5 text-blue-400" />
+            <span>
+              Filtrando semana por: <strong>"{searchQuery}"</strong> ({matchingCount} encontrados)
+            </span>
+            {onClearSearch && (
+              <button
+                onClick={onClearSearch}
+                className="p-0.5 rounded-full hover:bg-blue-500/30 text-blue-300 hover:text-white transition"
+                title="Limpar busca"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-1.5">
           <button
             onClick={prevWeek}
             className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-slate-300 hover:text-white transition"
+            title="Semana Anterior"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={nextWeek}
             className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-slate-300 hover:text-white transition"
+            title="Próxima Semana"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Week Day Header Columns */}
-      <div className="flex-shrink-0 flex border-b border-white/10 dark:border-white/5 bg-slate-900/50">
+      {/* Week Header Days Columns */}
+      <div className="flex-shrink-0 flex border-b border-white/10 dark:border-white/5 bg-slate-900/60 backdrop-blur-md">
         <div className="w-14 sm:w-16 flex-shrink-0 border-r border-white/10 text-center py-2 text-[10px] text-slate-500 font-mono">
           HORA
         </div>
@@ -189,11 +223,12 @@ export const WeekView: React.FC<WeekViewProps> = ({
                         sounds.playTactileClick();
                         onOpenCreateEvent(presetTime);
                       }}
-                      className="h-[60px] border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer"
+                      className="h-[60px] border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors"
+                      title={`Clique para agendar em ${dayIso} às ${pad(h)}:00`}
                     />
                   ))}
 
-                  {/* Red Live Time Marker Line on Today */}
+                  {/* Real-time Indicator Line if today */}
                   {todayMatch && (
                     <div
                       className="absolute left-0 right-0 z-20 pointer-events-none flex items-center"
@@ -206,6 +241,10 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
                   {/* Events positioned in column */}
                   {dayEvents.map((ev) => {
+                    const eventColor = resolveEventColor(ev, categories);
+                    const categoryName = getCategoryName(ev.category, categories);
+                    const isMatch = hasSearch ? matchesEventSearch(ev, searchQuery) : true;
+
                     const startDt = new Date(ev.start);
                     const endDt = new Date(ev.end);
                     const startMin = startDt.getHours() * 60 + startDt.getMinutes();
@@ -223,16 +262,33 @@ export const WeekView: React.FC<WeekViewProps> = ({
                         style={{
                           top: `${startMin}px`,
                           height: `${duration}px`,
-                          backgroundColor: `${ev.color}35`,
-                          borderLeft: `4px solid ${ev.color || '#3b82f6'}`
+                          backgroundColor: `${eventColor}35`,
+                          borderLeft: `4px solid ${eventColor || '#3b82f6'}`
                         }}
-                        className="absolute left-1 right-1 rounded-lg p-1.5 overflow-hidden text-xs cursor-pointer shadow-md backdrop-blur-md border border-white/10 hover:brightness-125 z-10 transition-transform active:scale-98"
+                        className={`absolute left-1 right-1 rounded-lg p-1.5 overflow-hidden text-xs cursor-pointer shadow-md backdrop-blur-md border border-white/10 hover:brightness-125 z-10 transition-all active:scale-98 ${
+                          hasSearch && !isMatch ? 'opacity-30' : ''
+                        } ${hasSearch && isMatch ? 'ring-2 ring-white shadow-xl z-20' : ''}`}
                       >
                         <div className="flex items-center gap-1 font-bold text-white truncate text-[11px]">
                           {ev.hangoutLink && <Video className="w-3 h-3 text-emerald-400 flex-shrink-0" />}
                           <span className="truncate">{ev.title}</span>
                         </div>
-                        <div className="text-[10px] text-slate-300 font-mono opacity-90 truncate">
+
+                        {/* Category pill reflecting category color */}
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span
+                            className="text-[9px] font-bold uppercase px-1 py-0.2 rounded border"
+                            style={{
+                              backgroundColor: `${eventColor}30`,
+                              borderColor: `${eventColor}50`,
+                              color: eventColor
+                            }}
+                          >
+                            {categoryName}
+                          </span>
+                        </div>
+
+                        <div className="text-[10px] text-slate-300 font-mono opacity-90 truncate mt-0.5">
                           {startDt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} -{' '}
                           {endDt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </div>
@@ -243,7 +299,6 @@ export const WeekView: React.FC<WeekViewProps> = ({
               );
             })}
           </div>
-
         </div>
       </div>
 
