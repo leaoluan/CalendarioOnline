@@ -19,7 +19,7 @@ import { GestureDetector } from './components/GestureDetector';
 import { LoginScreen } from './components/LoginScreen';
 import { UserManagementModal } from './components/UserManagementModal';
 import { AuthProvider, useAuth } from './hooks/useAuth';
-import type { Profile } from './lib/supabase';
+import { supabaseConfigError, type Profile } from './lib/supabase';
 
 import {
   CalendarEvent,
@@ -959,6 +959,19 @@ function ChronosApp() {
 }
 
 export default function App() {
+  if (supabaseConfigError) {
+    return (
+      <div className="w-screen h-screen flex items-center justify-center bg-slate-950 px-6 text-center">
+        <div className="max-w-md">
+          <h1 className="text-xl font-semibold text-white">Configuração incompleta</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-400">
+            O aplicativo não recebeu as configurações públicas do banco de dados. Adicione as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY na Vercel e faça um novo deploy.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AuthProvider>
       <ChronosApp />
