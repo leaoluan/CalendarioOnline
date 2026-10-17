@@ -38,21 +38,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
       setSession(session);
       if (session?.user) {
-        fetchProfile(session.user.id).finally(() => setLoading(false));
+        fetchProfile(session.user.id).then((data) => {
+          if (!mounted) return;
+          if (!data) {
+            // Profile might not exist yet — retry once after short delay
+            setTimeout(() => {
+              if (mounted) fetchProfile(session.user.id).finally(() => mounted && setLoading(false));
+            }, 1000);
+          } else {
+            setLoading(false);
+          }
+        }).catch(() => mounted && setLoading(false));
       } else {
         setLoading(false);
       }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
       setSession(session);
       if (session?.user) {
+        setLoading(true);
         (async () => {
-          await fetchProfile(session.user.id);
-          setLoading(false);
+          const data = await fetchProfile(session.user.id);
+          if (!mounted) return;
+          if (!data) {
+            // Retry profile fetch after delay (trigger may not have completed)
+            setTimeout(() => {
+              if (mounted) fetchProfile(session.user.id).finally(() => mounted && setLoading(false));
+            }, 1000);
+          } else {
+            setLoading(false);
+          }
         })();
       } else {
         setProfile(null);
@@ -60,7 +83,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    // Safety timeout: never stay loading forever
+    const safetyTimer = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 8000);
+
     return () => {
+      mounted = false;
+      clearTimeout(safetyTimer);
       listener.subscription.unsubscribe();
     };
   }, [fetchProfile]);

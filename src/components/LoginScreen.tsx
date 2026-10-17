@@ -22,19 +22,18 @@ export function LoginScreen() {
       const { error } = await signIn(email.trim(), password);
       if (error) {
         setError(error.includes('Invalid login') ? 'Email ou senha incorretos.' : error);
-        setLoading(false);
       }
+      setLoading(false);
     } else {
       const { error } = await signUp(email.trim(), password, name.trim());
       if (error) {
         setError(error);
-        setLoading(false);
       } else {
         sounds.playSyncSuccess();
         setError('Conta criada! Verifique se o cadastro foi confirmado e faça login.');
-        setLoading(false);
         setMode('login');
       }
+      setLoading(false);
     }
   };
 
