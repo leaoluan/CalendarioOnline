@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="chronosGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Background squircle -->
+  <rect width="512" height="512" rx="128" fill="#090d16" />
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#chronosGrad)" opacity="0.15" stroke="url(#chronosGrad)" stroke-width="4" />
+  
+  <!-- Calendar Body -->
+  <rect x="96" y="128" width="320" height="288" rx="32" fill="#1e293b" stroke="#3b82f6" stroke-width="8" />
+  <!-- Calendar Header Strip -->
+  <path d="M96 160 C96 142.3 110.3 128 128 128 L384 128 C401.7 128 416 142.3 416 160 L416 208 L96 208 Z" fill="url(#chronosGrad)" />
+  
+  <!-- Rings -->
+  <rect x="160" y="96" width="24" height="64" rx="12" fill="#e2e8f0" />
+  <rect x="328" y="96" width="24" height="64" rx="12" fill="#e2e8f0" />
+  
+  <!-- Clock Horizon symbol inside calendar -->
+  <circle cx="256" cy="304" r="64" fill="#0f172a" stroke="#60a5fa" stroke-width="6" />
+  <!-- Clock Hands -->
+  <line x1="256" y1="304" x2="256" y2="264" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" />
+  <line x1="256" y1="304" x2="288" y2="304" stroke="#818cf8" stroke-width="6" stroke-linecap="round" />
+  <!-- Center dot -->
+  <circle cx="256" cy="304" r="8" fill="#38bdf8" />
+  
+  <!-- Sync Ring Accents -->
+  <circle cx="376" cy="368" r="32" fill="#2563eb" />
+  <path d="M366 368 A10 10 0 1 1 386 368" stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round" />
+  <polygon points="386,364 392,370 384,374" fill="#ffffff" />
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "Chronos Calendar & Agenda",
+  "description": "Full-screen adaptive calendar & agenda app with Google Calendar sync, 24h horizon, multi-user accounts, 2FA, Gemini AI insights, widgets, and offline support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
