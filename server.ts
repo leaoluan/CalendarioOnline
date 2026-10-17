@@ -265,7 +265,7 @@ Responda em formato JSON com o seguinte formato:
 }`;
 
       const aiResponse = await aiClient.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -344,7 +344,7 @@ Regras:
 6. Lembretes padrão em minutos (ex: [15] para 15 minutos antes).`;
 
       const aiResponse = await aiClient.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -395,7 +395,7 @@ ${JSON.stringify(events || [])}
 Destaque o primeiro evento crítico, momentos de respiro e deseje um dia produtivo.`;
 
       const aiResponse = await aiClient.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt
       });
 

@@ -64,6 +64,11 @@ import { sounds } from './services/soundEffects';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { CloudOff, Loader2 } from 'lucide-react';
 
+// events.id is a uuid column in Supabase — only locally-created events
+// (crypto.randomUUID) can be persisted there.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isValidEventId = (id: string) => UUID_RE.test(id);
+
 const DEFAULT_PREFS: UserPreferences = {
   theme: 'dark',
   glassOpacity: 75,
@@ -428,9 +433,15 @@ function ChronosApp() {
       }
     }
 
-    // Save to Supabase
-    if (profile) {
-      await saveUserEvent(profile.id, event);
+    // Save to Supabase. Only events with a valid UUID id can be persisted —
+    // events fetched from Google use "gcal-..." ids and live in Google
+    // Calendar (they are re-fetched on each sync), so we skip the DB for them.
+    if (profile && isValidEventId(event.id)) {
+      try {
+        await saveUserEvent(profile.id, event);
+      } catch (err) {
+        console.error('Failed to persist event to Supabase:', err);
+      }
     }
 
     setEvents((prev) => {
@@ -472,7 +483,15 @@ function ChronosApp() {
       }
     }
 
-    await deleteUserEvent(event.id);
+    // Only touch Supabase for locally-owned events (UUID ids). Google-fetched
+    // events are removed from Google Calendar above.
+    if (isValidEventId(event.id)) {
+      try {
+        await deleteUserEvent(event.id);
+      } catch (err) {
+        console.error('Failed to delete event from Supabase:', err);
+      }
+    }
     setEvents((prev) => prev.filter((e) => e.id !== event.id));
 
     addNotification({

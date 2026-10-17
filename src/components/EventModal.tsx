@@ -243,7 +243,7 @@ export const EventModal: React.FC<EventModalProps> = ({
     setIsSaving(true);
     try {
       const eventData: CalendarEvent = {
-        id: eventToEdit ? eventToEdit.id : `ev-${Date.now()}`,
+        id: eventToEdit ? eventToEdit.id : crypto.randomUUID(),
         title: title.trim(),
         description: description.trim(),
         start: new Date(start).toISOString(),
