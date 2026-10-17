@@ -21,7 +21,15 @@ export function LoginScreen() {
     if (mode === 'login') {
       const { error } = await signIn(email.trim(), password);
       if (error) {
-        setError(error.includes('Invalid login') ? 'Email ou senha incorretos.' : error);
+        const isInvalidLogin = error.includes('Invalid login');
+        const isSupabaseUrlError = error.includes('não foi possível acessar o Supabase') || error.includes('Unexpected token') || error.includes('valid JSON');
+        setError(
+          isInvalidLogin
+            ? 'Email ou senha incorretos.'
+            : isSupabaseUrlError
+              ? 'A conexão com o Supabase está configurada com uma URL inválida. Use a URL da API em Supabase → Project Settings → API, não a URL do painel.'
+              : error,
+        );
       }
       setLoading(false);
     } else {

@@ -95,11 +95,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchProfile]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { error: error.message };
 
-    // Immediately set session and fetch profile — don't wait for onAuthStateChange
-    setSession(data.session);
+      // Immediately set session and fetch profile — don't wait for onAuthStateChange
+      setSession(data.session);
 
     if (data.user) {
       // Try to load profile with retries
@@ -133,7 +134,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    return { error: null };
+      return { error: null };
+    } catch (error) {
+      console.error('Sign-in request failed:', error);
+      return {
+        error: 'Não foi possível acessar o Supabase. Confira se VITE_SUPABASE_URL é a URL da API do projeto, terminando em .supabase.co, e não a página do painel ou da Vercel.',
+      };
+    }
   }, [fetchProfile]);
 
   const signUp = useCallback(async (email: string, password: string, name: string, role?: string) => {
