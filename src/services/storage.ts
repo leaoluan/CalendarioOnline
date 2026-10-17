@@ -1,301 +1,90 @@
-import { CalendarEvent, UserProfile, NotificationItem, CategoryDefinition } from '../types/calendar';
+import { supabase } from '../lib/supabase';
+import { CalendarEvent, CategoryDefinition, NotificationItem } from '../types/calendar';
 
-const STORAGE_KEYS = {
-  USERS: 'chronos_users_list',
-  ACTIVE_USER_ID: 'chronos_active_user_id',
-  EVENTS_PREFIX: 'chronos_events_',
-  CATEGORIES_PREFIX: 'chronos_categories_',
-  NOTIFICATIONS: 'chronos_notifications',
-  SYSTEM_THEME: 'chronos_theme'
-};
-
-const DEFAULT_USERS: UserProfile[] = [
-  {
-    id: 'user-1',
-    name: 'Luan Leão',
-    email: 'luanleao12@gmail.com',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    role: 'ADMIN',
-    isGoogleConnected: true,
-    googleEmail: 'luanleao12@gmail.com',
-    twoFactorEnabled: true,
-    twoFactorSecret: 'JBSWY3DPEHPK3PXP',
-    backupCodes: ['CHRONOS-8921', 'CHRONOS-4412', 'CHRONOS-9903', 'CHRONOS-1175'],
-    preferences: {
-      theme: 'dark',
-      glassOpacity: 75,
-      gesturesEnabled: true,
-      swipeSensitivity: 80,
-      autoSyncInterval: 5,
-      soundAlerts: true,
-      defaultView: 'month',
-      customGestures: {
-        swipeLeft: 'next_period',
-        swipeRight: 'prev_period',
-        swipeDown: 'sync_now',
-        doubleTap: 'quick_create'
-      }
-    }
-  },
-  {
-    id: 'user-2',
-    name: 'Trabalho & Projetos',
-    email: 'trabalho@empresa.com',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    role: 'EDITOR',
-    isGoogleConnected: false,
-    twoFactorEnabled: true,
-    twoFactorSecret: 'HXDMVJECJJWSRZ3U',
-    backupCodes: ['CHRONOS-7714', 'CHRONOS-3319'],
-    preferences: {
-      theme: 'oled',
-      glassOpacity: 85,
-      gesturesEnabled: true,
-      swipeSensitivity: 90,
-      autoSyncInterval: 10,
-      soundAlerts: true,
-      defaultView: 'week',
-      customGestures: {
-        swipeLeft: 'next_period',
-        swipeRight: 'prev_period',
-        swipeDown: 'sync_now',
-        doubleTap: 'quick_create'
-      }
-    }
-  },
-  {
-    id: 'user-3',
-    name: 'Família & Lazer',
-    email: 'familia@casa.org',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    role: 'VIEWER',
-    isGoogleConnected: false,
-    twoFactorEnabled: false,
-    preferences: {
-      theme: 'dark',
-      glassOpacity: 65,
-      gesturesEnabled: true,
-      swipeSensitivity: 80,
-      autoSyncInterval: 15,
-      soundAlerts: false,
-      defaultView: 'horizon24h',
-      customGestures: {
-        swipeLeft: 'next_period',
-        swipeRight: 'prev_period',
-        swipeDown: 'sync_now',
-        doubleTap: 'quick_create'
-      }
-    }
-  }
-];
-
-export function getInitialUsers(): UserProfile[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.USERS);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error(e);
-  }
-  saveUsers(DEFAULT_USERS);
-  return DEFAULT_USERS;
-}
-
-export function saveUsers(users: UserProfile[]) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-export function getActiveUserId(): string {
-  try {
-    const id = localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID);
-    if (id) return id;
-  } catch {}
-  return DEFAULT_USERS[0].id;
-}
-
-export function setActiveUserId(id: string) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_USER_ID, id);
-  } catch {}
-}
-
-// Generate realistic default events for initial display
-export function generateSeedEvents(userId: string): CalendarEvent[] {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const d = now.getDate();
-
-  const createIso = (dayOffset: number, hour: number, minute: number = 0) => {
-    const dt = new Date(y, m, d + dayOffset, hour, minute, 0);
-    return dt.toISOString();
+// Convert DB event row to CalendarEvent
+function rowToEvent(row: any): CalendarEvent {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description || undefined,
+    start: row.start_time,
+    end: row.end_time,
+    isAllDay: row.is_all_day,
+    location: row.location || undefined,
+    hangoutLink: row.hangout_link || undefined,
+    category: row.category,
+    color: row.color,
+    reminderMinutes: row.reminder_minutes || [15],
+    isGoogleSynced: row.is_google_synced,
+    googleEventId: row.google_event_id || undefined,
+    recurring: row.recurring || 'none',
+    syncStatus: row.sync_status || 'synced',
+    userId: row.user_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
-
-  return [
-    {
-      id: `ev-seed-1`,
-      title: 'Alinhamento Estratégico com Diretoria',
-      description: 'Revisão das metas trimestrais e prioridades de engenharia.',
-      start: createIso(0, 10, 0),
-      end: createIso(0, 11, 0),
-      isAllDay: false,
-      location: 'Sala Executiva Alpha & Google Meet',
-      hangoutLink: 'https://meet.google.com/abc-defg-hij',
-      category: 'work',
-      color: '#3b82f6',
-      reminderMinutes: [15, 30],
-      isGoogleSynced: true,
-      googleEventId: 'g_seed_1',
-      userId,
-      syncStatus: 'synced'
-    },
-    {
-      id: `ev-seed-2`,
-      title: 'Treino Funcional & Cardio',
-      description: 'Exercícios aeróbicos e musculação de alta intensidade.',
-      start: createIso(0, 12, 30),
-      end: createIso(0, 13, 30),
-      isAllDay: false,
-      location: 'Academia BodyTech',
-      category: 'fitness',
-      color: '#f97316',
-      reminderMinutes: [30],
-      isGoogleSynced: false,
-      userId,
-      syncStatus: 'synced'
-    },
-    {
-      id: `ev-seed-3`,
-      title: 'Review de Código & Arquitetura Cloud',
-      description: 'Validação da integração Google Workspace e pipelines de deploy.',
-      start: createIso(0, 15, 0),
-      end: createIso(0, 16, 30),
-      isAllDay: false,
-      location: 'Google Meet',
-      hangoutLink: 'https://meet.google.com/xyz-uvwx-rst',
-      category: 'meeting',
-      color: '#8b5cf6',
-      reminderMinutes: [10],
-      isGoogleSynced: true,
-      googleEventId: 'g_seed_3',
-      userId,
-      syncStatus: 'synced'
-    },
-    {
-      id: `ev-seed-4`,
-      title: 'Entrega da Proposta Técnica do Projeto',
-      description: 'Deadline fatal para envio do relatório de viabilidade aos clientes.',
-      start: createIso(0, 18, 0),
-      end: createIso(0, 19, 0),
-      isAllDay: false,
-      location: 'Portal de Clientes',
-      category: 'urgent',
-      color: '#ef4444',
-      reminderMinutes: [60],
-      isGoogleSynced: true,
-      googleEventId: 'g_seed_4',
-      userId,
-      syncStatus: 'synced'
-    },
-    {
-      id: `ev-seed-5`,
-      title: 'Jantar em Família & Comemoração',
-      description: 'Aniversário de formatura e encontro de fim de semana.',
-      start: createIso(1, 20, 0),
-      end: createIso(1, 22, 30),
-      isAllDay: false,
-      location: 'Restaurante Terraço Itália',
-      category: 'personal',
-      color: '#10b981',
-      reminderMinutes: [60],
-      isGoogleSynced: false,
-      userId,
-      syncStatus: 'synced'
-    },
-    {
-      id: `ev-seed-6`,
-      title: 'Planejamento Semanal com a Equipe',
-      description: 'Sprint planning e alocação de tarefas para os próximos dias.',
-      start: createIso(2, 9, 0),
-      end: createIso(2, 10, 30),
-      isAllDay: false,
-      location: 'Google Meet',
-      hangoutLink: 'https://meet.google.com/qpr-stuv-wxy',
-      category: 'work',
-      color: '#3b82f6',
-      reminderMinutes: [15],
-      isGoogleSynced: true,
-      googleEventId: 'g_seed_6',
-      userId,
-      syncStatus: 'synced'
-    }
-  ];
 }
 
-export function loadUserEvents(userId: string): CalendarEvent[] {
-  try {
-    const raw = localStorage.getItem(`${STORAGE_KEYS.EVENTS_PREFIX}${userId}`);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error(e);
+// Convert CalendarEvent to DB insert/update payload
+function eventToRow(event: CalendarEvent) {
+  return {
+    title: event.title,
+    description: event.description || '',
+    start_time: event.start,
+    end_time: event.end,
+    is_all_day: event.isAllDay,
+    location: event.location || '',
+    hangout_link: event.hangoutLink || null,
+    category: event.category,
+    color: event.color,
+    reminder_minutes: event.reminderMinutes,
+    is_google_synced: event.isGoogleSynced,
+    google_event_id: event.googleEventId || null,
+    recurring: event.recurring || 'none',
+    sync_status: event.syncStatus || 'synced',
+  };
+}
+
+// === Events ===
+export async function loadUserEvents(userId: string): Promise<CalendarEvent[]> {
+  const { data, error } = await supabase
+    .from('events')
+    .select('*')
+    .eq('user_id', userId)
+    .order('start_time', { ascending: true });
+
+  if (error) {
+    console.error('Error loading events:', error);
+    return [];
   }
-  const seeds = generateSeedEvents(userId);
-  saveUserEvents(userId, seeds);
-  return seeds;
+  return (data || []).map(rowToEvent);
 }
 
-export function saveUserEvents(userId: string, events: CalendarEvent[]) {
-  try {
-    localStorage.setItem(`${STORAGE_KEYS.EVENTS_PREFIX}${userId}`, JSON.stringify(events));
-  } catch (e) {
-    console.error(e);
+export async function saveUserEvent(userId: string, event: CalendarEvent): Promise<void> {
+  const row = { ...eventToRow(event), user_id: userId, id: event.id };
+  const { error } = await supabase
+    .from('events')
+    .upsert(row);
+
+  if (error) {
+    console.error('Error saving event:', error);
+    throw error;
   }
 }
 
-export function getNotifications(): NotificationItem[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  const seeds: NotificationItem[] = [
-    {
-      id: 'notif-1',
-      title: 'Google Calendar Sincronizado',
-      message: 'Todos os seus eventos da conta Google estão atualizados.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-      type: 'sync',
-      read: false
-    },
-    {
-      id: 'notif-2',
-      title: 'Horizonte 24 Horas Ativo',
-      message: 'Você tem 4 eventos programados para hoje.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-      type: 'reminder',
-      read: false
-    },
-    {
-      id: 'notif-3',
-      title: 'Segurança 2FA',
-      message: 'Autenticação em duas etapas ativa com chave TOTP protegida.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-      type: 'security',
-      read: true
-    }
-  ];
-  saveNotifications(seeds);
-  return seeds;
+export async function deleteUserEvent(eventId: string): Promise<void> {
+  const { error } = await supabase
+    .from('events')
+    .delete()
+    .eq('id', eventId);
+
+  if (error) {
+    console.error('Error deleting event:', error);
+    throw error;
+  }
 }
 
-export function saveNotifications(notifications: NotificationItem[]) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
-  } catch {}
-}
-
+// === Categories ===
 export const DEFAULT_CATEGORIES: CategoryDefinition[] = [
   { id: 'work', name: 'Work', color: '#3b82f6', isDefault: true },
   { id: 'personal', name: 'Personal', color: '#10b981', isDefault: true },
@@ -307,35 +96,183 @@ export const DEFAULT_CATEGORIES: CategoryDefinition[] = [
   { id: 'finance', name: 'Finance', color: '#eab308', isDefault: false },
 ];
 
-export function loadUserCategories(userId: string): CategoryDefinition[] {
-  try {
-    const raw = localStorage.getItem(`${STORAGE_KEYS.CATEGORIES_PREFIX}${userId}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+export async function loadUserCategories(userId: string): Promise<CategoryDefinition[]> {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error loading categories:', error);
+    return DEFAULT_CATEGORIES;
+  }
+
+  if (!data || data.length === 0) {
+    // Seed default categories for new users
+    await saveUserCategories(userId, DEFAULT_CATEGORIES);
+    return DEFAULT_CATEGORIES;
+  }
+
+  return data.map((c: any) => ({
+    id: c.name.toLowerCase().replace(/\s+/g, '-'),
+    name: c.name,
+    color: c.color,
+    icon: c.icon || undefined,
+    isDefault: c.is_default,
+  }));
+}
+
+export async function saveUserCategories(userId: string, categories: CategoryDefinition[]): Promise<void> {
+  // Delete existing and re-insert (simple approach for category management)
+  await supabase.from('categories').delete().eq('user_id', userId);
+
+  const rows = categories.map(c => ({
+    user_id: userId,
+    name: c.name,
+    color: c.color,
+    icon: c.icon || null,
+    is_default: c.isDefault || false,
+  }));
+
+  const { error } = await supabase.from('categories').insert(rows);
+  if (error) {
+    console.error('Error saving categories:', error);
+  }
+}
+
+export async function saveUserCategory(userId: string, category: CategoryDefinition): Promise<void> {
+  const row = {
+    user_id: userId,
+    name: category.name,
+    color: category.color,
+    icon: category.icon || null,
+    is_default: category.isDefault || false,
+  };
+
+  const { data: existing } = await supabase
+    .from('categories')
+    .select('id')
+    .eq('user_id', userId)
+    .ilike('name', category.name)
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from('categories')
+      .update({ color: category.color, icon: category.icon || null, is_default: category.isDefault || false })
+      .eq('id', existing.id);
+  } else {
+    await supabase.from('categories').insert(row);
+  }
+}
+
+export async function deleteUserCategory(userId: string, categoryId: string): Promise<void> {
+  // categoryId is the name-based slug, so we need to find by name
+  const { data } = await supabase
+    .from('categories')
+    .select('id, name')
+    .eq('user_id', userId);
+
+  if (data) {
+    const target = data.find(c => c.name.toLowerCase().replace(/\s+/g, '-') === categoryId);
+    if (target) {
+      await supabase.from('categories').delete().eq('id', target.id);
     }
-  } catch (e) {
-    console.error('Error loading categories:', e);
-  }
-  saveUserCategories(userId, DEFAULT_CATEGORIES);
-  return DEFAULT_CATEGORIES;
-}
-
-export function saveUserCategories(userId: string, categories: CategoryDefinition[]) {
-  try {
-    localStorage.setItem(
-      `${STORAGE_KEYS.CATEGORIES_PREFIX}${userId}`,
-      JSON.stringify(categories)
-    );
-  } catch (e) {
-    console.error('Error saving categories:', e);
   }
 }
 
-/**
- * Resolves the display color for an event, prioritizing the event's direct color,
- * then looking up the category's assigned color, and finally defaulting to blue.
- */
+// === Notifications ===
+export async function loadNotifications(userId: string): Promise<NotificationItem[]> {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error('Error loading notifications:', error);
+    return [];
+  }
+
+  return (data || []).map((n: any) => ({
+    id: n.id,
+    title: n.title,
+    message: n.message,
+    timestamp: n.created_at,
+    type: n.type,
+    read: n.read,
+    eventId: n.event_id || undefined,
+  }));
+}
+
+export async function saveNotification(userId: string, notification: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>): Promise<void> {
+  const { error } = await supabase.from('notifications').insert({
+    user_id: userId,
+    title: notification.title,
+    message: notification.message,
+    type: notification.type,
+    event_id: notification.eventId || null,
+  });
+
+  if (error) {
+    console.error('Error saving notification:', error);
+  }
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('user_id', userId)
+    .eq('read', false);
+}
+
+export async function clearAllNotifications(userId: string): Promise<void> {
+  await supabase
+    .from('notifications')
+    .delete()
+    .eq('user_id', userId);
+}
+
+// === Google Token Storage (per user) ===
+export async function loadGoogleToken(userId: string): Promise<{ accessToken: string; refreshToken: string | null; email: string | null } | null> {
+  const { data, error } = await supabase
+    .from('google_tokens')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    email: data.email,
+  };
+}
+
+export async function saveGoogleToken(userId: string, accessToken: string, refreshToken: string | null, email: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('google_tokens')
+    .upsert({
+      user_id: userId,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      email,
+      updated_at: new Date().toISOString(),
+    });
+
+  if (error) {
+    console.error('Error saving google token:', error);
+  }
+}
+
+export async function deleteGoogleToken(userId: string): Promise<void> {
+  await supabase.from('google_tokens').delete().eq('user_id', userId);
+}
+
+// === Utility functions (kept from original) ===
 export function resolveEventColor(
   event: CalendarEvent,
   categories?: CategoryDefinition[]
@@ -360,9 +297,6 @@ export function resolveEventColor(
   return '#3b82f6';
 }
 
-/**
- * Resolves the human-readable category name for an event.
- */
 export function getCategoryName(
   categoryId: string | undefined,
   categories?: CategoryDefinition[]
@@ -385,20 +319,6 @@ export function getCategoryName(
   return categoryId.charAt(0).toUpperCase() + categoryId.slice(1);
 }
 
-/**
- * Converts an ISO datetime string to a local YYYY-MM-DD date key.
- * Using split('T')[0] would give the UTC date, which is wrong for events
- * near midnight in non-UTC timezones (e.g. Brazil UTC-3).
- */
-export function toLocalDateKey(isoString: string): string {
-  const d = new Date(isoString);
-  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/**
- * Checks whether an event matches a global search query across title, description, or location.
- */
 export function matchesEventSearch(event: CalendarEvent, query: string): boolean {
   if (!query || !query.trim()) return true;
   const q = query.toLowerCase().trim();
@@ -409,4 +329,8 @@ export function matchesEventSearch(event: CalendarEvent, query: string): boolean
   return titleMatch || descMatch || locMatch || catMatch;
 }
 
-
+export function toLocalDateKey(isoString: string): string {
+  const d = new Date(isoString);
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

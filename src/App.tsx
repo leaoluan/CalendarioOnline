@@ -16,6 +16,10 @@ import { SettingsModal } from './components/SettingsModal';
 import { FloatingMiniWidget } from './components/FloatingMiniWidget';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { GestureDetector } from './components/GestureDetector';
+import { LoginScreen } from './components/LoginScreen';
+import { UserManagementModal } from './components/UserManagementModal';
+import { AuthProvider, useAuth } from './hooks/useAuth';
+import type { Profile } from './lib/supabase';
 
 import {
   CalendarEvent,
@@ -26,16 +30,20 @@ import {
   CategoryDefinition
 } from './types/calendar';
 import {
-  getInitialUsers,
-  saveUsers,
-  getActiveUserId,
-  setActiveUserId,
   loadUserEvents,
-  saveUserEvents,
-  getNotifications,
-  saveNotifications,
+  saveUserEvent,
+  deleteUserEvent,
   loadUserCategories,
-  saveUserCategories
+  saveUserCategories,
+  saveUserCategory,
+  deleteUserCategory,
+  loadNotifications,
+  saveNotification,
+  markAllNotificationsRead,
+  clearAllNotifications,
+  loadGoogleToken,
+  saveGoogleToken,
+  deleteGoogleToken,
 } from './services/storage';
 import {
   initAuth,
@@ -54,50 +62,79 @@ import {
 } from './services/googleCalendar';
 import { sounds } from './services/soundEffects';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
-import { CloudOff } from 'lucide-react';
+import { CloudOff, Loader2 } from 'lucide-react';
 
-export default function App() {
+const DEFAULT_PREFS: UserPreferences = {
+  theme: 'dark',
+  glassOpacity: 75,
+  gesturesEnabled: true,
+  swipeSensitivity: 80,
+  autoSyncInterval: 5,
+  soundAlerts: true,
+  defaultView: 'month',
+  customGestures: {
+    swipeLeft: 'next_period',
+    swipeRight: 'prev_period',
+    swipeDown: 'sync_now',
+    doubleTap: 'quick_create',
+  },
+};
+
+function profileToUserProfile(profile: Profile): UserProfile {
+  const prefs = profile.preferences || ({} as any);
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email,
+    avatar: profile.avatar || '',
+    role: profile.role,
+    isGoogleConnected: false,
+    googleEmail: undefined,
+    twoFactorEnabled: profile.two_factor_enabled,
+    twoFactorSecret: profile.two_factor_secret || undefined,
+    backupCodes: [],
+    preferences: {
+      theme: prefs.theme || 'dark',
+      glassOpacity: prefs.glassOpacity ?? 75,
+      gesturesEnabled: prefs.gesturesEnabled ?? true,
+      swipeSensitivity: prefs.swipeSensitivity ?? 80,
+      autoSyncInterval: prefs.autoSyncInterval ?? 5,
+      soundAlerts: prefs.soundAlerts ?? true,
+      defaultView: prefs.defaultView || 'month',
+      customGestures: prefs.customGestures || DEFAULT_PREFS.customGestures,
+    },
+  };
+}
+
+function ChronosApp() {
+  const { session, profile, loading, signOut, updateProfile } = useAuth();
   const isOnline = useOnlineStatus();
 
-  // Multi-user state
-  const [users, setUsers] = useState<UserProfile[]>(() => getInitialUsers());
-  const [activeUser, setActiveUser] = useState<UserProfile>(() => {
-    const list = getInitialUsers();
-    const activeId = getActiveUserId();
-    return list.find((u) => u.id === activeId) || list[0];
-  });
+  const activeUser: UserProfile = profile ? profileToUserProfile(profile) : {
+    id: '', name: '', email: '', avatar: '', role: 'VIEWER',
+    isGoogleConnected: false, twoFactorEnabled: false, preferences: DEFAULT_PREFS,
+  };
 
   // Calendar events for active user
-  const [events, setEvents] = useState<CalendarEvent[]>(() =>
-    loadUserEvents(activeUser.id)
-  );
-
-  // User Categories (Work, Personal, Fitness, etc.)
-  const [categories, setCategories] = useState<CategoryDefinition[]>(() =>
-    loadUserCategories(activeUser.id)
-  );
-
-  // Reload categories and events when active user changes
-  useEffect(() => {
-    setCategories(loadUserCategories(activeUser.id));
-  }, [activeUser.id]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [categories, setCategories] = useState<CategoryDefinition[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   // View state
-  const [currentView, setCurrentView] = useState<
-    'month' | 'week' | 'day' | 'agenda' | 'horizon24h' | 'admin'
-  >(activeUser.preferences.defaultView || 'month');
+  const [currentView, setCurrentView] = useState<'month' | 'week' | 'day' | 'agenda' | 'horizon24h' | 'admin'>(
+    activeUser.preferences.defaultView || 'month'
+  );
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
 
   // Google Calendar integration
-  const [googleConnected, setGoogleConnected] = useState<boolean>(activeUser.isGoogleConnected);
+  const [googleConnected, setGoogleConnected] = useState<boolean>(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
-  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(() => getOfflineMutations().length);
+  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
 
   // Notifications
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() => getNotifications());
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   // System updates
@@ -112,11 +149,11 @@ export default function App() {
   const [isFloatingWidgetActive, setIsFloatingWidgetActive] = useState(false);
   const [isGeminiInsightsOpen, setIsGeminiInsightsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
 
-  // 2FA Challenge & Setup
+  // 2FA
   const [is2FAModalOpen, setIs2FAModalOpen] = useState(false);
   const [twoFactorMode, setTwoFactorMode] = useState<'setup' | 'challenge'>('setup');
-  const [pendingUserSwitch, setPendingUserSwitch] = useState<UserProfile | null>(null);
 
   // Theme & Transparency
   const [theme, setTheme] = useState<'dark' | 'light' | 'oled' | 'system'>(
@@ -126,32 +163,43 @@ export default function App() {
     activeUser.preferences.glassOpacity ?? 75
   );
 
-  // Sync users to storage
+  // Load data when profile changes
   useEffect(() => {
-    saveUsers(users);
-  }, [users]);
+    if (!profile) return;
 
-  // Sync events to storage when changed
-  useEffect(() => {
-    saveUserEvents(activeUser.id, events);
-  }, [events, activeUser.id]);
+    const userId = profile.id;
+    setTheme(profile.preferences?.theme || 'dark');
+    setTransparency(profile.preferences?.glassOpacity ?? 75);
+    setCurrentView(profile.preferences?.defaultView || 'month');
 
-  // Sync notifications to storage
-  useEffect(() => {
-    saveNotifications(notifications);
-  }, [notifications]);
+    (async () => {
+      const [evs, cats, notifs] = await Promise.all([
+        loadUserEvents(userId),
+        loadUserCategories(userId),
+        loadNotifications(userId),
+      ]);
+      setEvents(evs);
+      setCategories(cats);
+      setNotifications(notifs);
 
-  // Firebase Auth initialization
+      // Load Google token for this user
+      const token = await loadGoogleToken(userId);
+      if (token?.accessToken) {
+        setGoogleConnected(true);
+        setAccessToken(token.accessToken);
+      } else {
+        setGoogleConnected(false);
+        setAccessToken(null);
+      }
+    })();
+  }, [profile?.id]);
+
+  // Firebase Auth init
   useEffect(() => {
     const unsubscribe = initAuth(
-      (user, token) => {
+      (_user, token) => {
         setAccessToken(token);
         setGoogleConnected(true);
-        setActiveUser((prev) => ({
-          ...prev,
-          isGoogleConnected: true,
-          googleEmail: user.email || prev.email
-        }));
       },
       () => {
         setAccessToken(null);
@@ -162,7 +210,7 @@ export default function App() {
     };
   }, []);
 
-  // Fetch initial system version info from server
+  // Fetch system version
   const checkSystemVersion = useCallback(async () => {
     try {
       const res = await fetch('/api/system/version');
@@ -179,7 +227,21 @@ export default function App() {
     checkSystemVersion();
   }, [checkSystemVersion]);
 
-  // Auto-sync Google Calendar periodically
+  // Helper to append a notification (saves to Supabase + local state)
+  const addNotification = useCallback((item: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>) => {
+    const newNotif: NotificationItem = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      ...item,
+    };
+    setNotifications((prev) => [newNotif, ...prev.slice(0, 49)]);
+    if (profile) {
+      saveNotification(profile.id, item);
+    }
+  }, [profile]);
+
+  // Google Calendar sync
   const syncWithGoogleCalendar = useCallback(async () => {
     if (!isOnline) {
       addNotification({
@@ -200,15 +262,12 @@ export default function App() {
 
     setIsSyncing(true);
     try {
-      // 1. Process pending offline mutations
       const queueResult = await processOfflineQueue(token);
       setOfflineQueueCount(getOfflineMutations().length);
 
-      // 2. Fetch fresh events from Google Calendar
       const gEvents = await fetchGoogleCalendarEvents(token);
       if (gEvents && gEvents.length > 0) {
         setEvents((prev) => {
-          // Merge by googleEventId
           const localOnly = prev.filter((e) => !e.googleEventId);
           return [...gEvents, ...localOnly];
         });
@@ -219,7 +278,7 @@ export default function App() {
 
       addNotification({
         title: 'Google Calendar Sincronizado',
-        message: `Sincronização concluída com sucesso (${gEvents.length} eventos).`,
+        message: `Sincronização concluída com sucesso (${gEvents?.length || 0} eventos).`,
         type: 'sync'
       });
     } catch (err: any) {
@@ -232,16 +291,16 @@ export default function App() {
     } finally {
       setIsSyncing(false);
     }
-  }, [isOnline, accessToken]);
+  }, [isOnline, accessToken, addNotification]);
 
-  // Automatic retry when coming back online
+  // Auto retry when coming back online
   useEffect(() => {
     if (isOnline && offlineQueueCount > 0) {
       syncWithGoogleCalendar();
     }
   }, [isOnline, offlineQueueCount, syncWithGoogleCalendar]);
 
-  // Periodic background sync timer
+  // Periodic sync
   useEffect(() => {
     const minutes = activeUser.preferences.autoSyncInterval;
     if (!minutes || minutes <= 0 || !googleConnected) return;
@@ -253,22 +312,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeUser.preferences.autoSyncInterval, googleConnected, syncWithGoogleCalendar]);
 
-  // Real-Time Notification Checker: checks if an event is starting soon
+  // Reminder checker
   useEffect(() => {
+    if (!profile) return;
     const checkReminders = () => {
       const nowMs = Date.now();
       events.forEach((ev) => {
         const startMs = new Date(ev.start).getTime();
         const diffMinutes = Math.round((startMs - nowMs) / 60000);
 
-        // Check if event has a matching reminder
         if (ev.reminderMinutes?.includes(diffMinutes)) {
-          // Trigger audio chime
           if (activeUser.preferences.soundAlerts) {
             sounds.playReminderChime();
           }
 
-          // Trigger browser notification
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             new Notification(`Lembrete: ${ev.title}`, {
               body: `Seu compromisso começa em ${diffMinutes === 0 ? 'agora' : `${diffMinutes} minutos`}.`,
@@ -276,7 +333,6 @@ export default function App() {
             });
           }
 
-          // In-app notification
           addNotification({
             title: `Lembrete: ${ev.title}`,
             message: `Começa em ${diffMinutes === 0 ? 'agora' : `${diffMinutes} minutos`}. Local: ${ev.location || 'Não especificado'}.`,
@@ -287,41 +343,26 @@ export default function App() {
       });
     };
 
-    const interval = setInterval(checkReminders, 60000); // check every minute
+    const interval = setInterval(checkReminders, 60000);
     return () => clearInterval(interval);
-  }, [events, activeUser.preferences.soundAlerts]);
-
-  // Helper to append a notification
-  const addNotification = (item: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>) => {
-    const newNotif: NotificationItem = {
-      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: new Date().toISOString(),
-      read: false,
-      ...item
-    };
-    setNotifications((prev) => [newNotif, ...prev.slice(0, 49)]);
-  };
+  }, [events, activeUser.preferences.soundAlerts, profile, addNotification]);
 
   // Google Sign-in Handler
   const handleGoogleSignIn = async () => {
     sounds.playTactileClick();
     try {
       const result = await googleSignIn();
-      if (result) {
+      if (result && profile) {
         setAccessToken(result.accessToken);
         setGoogleConnected(true);
-        setActiveUser((prev) => ({
-          ...prev,
-          isGoogleConnected: true,
-          googleEmail: result.user.email || prev.email
-        }));
+        // Save token per-user in Supabase
+        await saveGoogleToken(profile.id, result.accessToken, null, result.user.email || null);
         sounds.playSyncSuccess();
         addNotification({
           title: 'Google Calendar Conectado',
           message: `Conexão autenticada para ${result.user.email}. Eventos serão sincronizados.`,
           type: 'security'
         });
-        // Initial sync
         setTimeout(syncWithGoogleCalendar, 400);
       }
     } catch (err: any) {
@@ -329,38 +370,22 @@ export default function App() {
     }
   };
 
-  // User Switch Handler with 2FA Challenge
-  const handleSwitchUser = (targetUser: UserProfile) => {
+  // Disconnect Google
+  const handleGoogleDisconnect = async () => {
+    if (!profile) return;
     sounds.playTactileClick();
-    if (targetUser.id === activeUser.id) return;
-
-    if (targetUser.twoFactorEnabled) {
-      setPendingUserSwitch(targetUser);
-      setTwoFactorMode('challenge');
-      setIs2FAModalOpen(true);
-    } else {
-      completeUserSwitch(targetUser);
-    }
-  };
-
-  const completeUserSwitch = (targetUser: UserProfile) => {
-    setActiveUserId(targetUser.id);
-    setActiveUser(targetUser);
-    setTheme(targetUser.preferences.theme || 'dark');
-    setTransparency(targetUser.preferences.glassOpacity ?? 75);
-    setEvents(loadUserEvents(targetUser.id));
-    setCurrentView(targetUser.preferences.defaultView || 'month');
-    setPendingUserSwitch(null);
-    sounds.playSyncSuccess();
-
+    await logoutGoogle();
+    await deleteGoogleToken(profile.id);
+    setGoogleConnected(false);
+    setAccessToken(null);
     addNotification({
-      title: 'Sessão Alterada',
-      message: `Perfil alternado para ${targetUser.name} (${targetUser.role}).`,
+      title: 'Google Calendar Desconectado',
+      message: 'A sincronização com Google foi desativada para sua conta.',
       type: 'security'
     });
   };
 
-  // Event Save Handler (Create or Update)
+  // Event Save Handler
   const handleSaveEvent = async (event: CalendarEvent) => {
     const isNew = !events.some((e) => e.id === event.id);
 
@@ -387,7 +412,6 @@ export default function App() {
           setOfflineQueueCount(getOfflineMutations().length);
         }
       } else {
-        // Enqueue offline mutation
         queueOfflineMutation({
           id: `mut-${Date.now()}`,
           type: isNew ? 'CREATE' : 'UPDATE',
@@ -397,6 +421,11 @@ export default function App() {
         event.syncStatus = 'offline_queued';
         setOfflineQueueCount(getOfflineMutations().length);
       }
+    }
+
+    // Save to Supabase
+    if (profile) {
+      await saveUserEvent(profile.id, event);
     }
 
     setEvents((prev) => {
@@ -438,6 +467,7 @@ export default function App() {
       }
     }
 
+    await deleteUserEvent(event.id);
     setEvents((prev) => prev.filter((e) => e.id !== event.id));
 
     addNotification({
@@ -447,7 +477,7 @@ export default function App() {
     });
   };
 
-  // Category Management Handlers (Work, Personal, Fitness, etc.)
+  // Category handlers
   const handleSaveCategory = (categoryToSave: CategoryDefinition) => {
     setCategories((prev) => {
       const idx = prev.findIndex((c) => c.id === categoryToSave.id);
@@ -457,7 +487,7 @@ export default function App() {
       } else {
         updated = [...prev, categoryToSave];
       }
-      saveUserCategories(activeUser.id, updated);
+      if (profile) saveUserCategories(profile.id, updated);
       return updated;
     });
 
@@ -471,7 +501,7 @@ export default function App() {
   const handleDeleteCategory = (catId: string) => {
     setCategories((prev) => {
       const updated = prev.filter((c) => c.id !== catId);
-      saveUserCategories(activeUser.id, updated);
+      if (profile) saveUserCategories(profile.id, updated);
       return updated;
     });
 
@@ -482,7 +512,7 @@ export default function App() {
     });
   };
 
-  // Apply OTA system update
+  // OTA update
   const handleApplyUpdate = async () => {
     try {
       const res = await fetch('/api/system/update', { method: 'POST' });
@@ -500,29 +530,20 @@ export default function App() {
     }
   };
 
-  // Save updated preferences for user
+  // Save preferences
   const handleSavePreferences = (newPrefs: UserPreferences) => {
-    setActiveUser((prev) => {
-      const updated = { ...prev, preferences: newPrefs };
-      setUsers((uList) => uList.map((u) => (u.id === updated.id ? updated : u)));
-      return updated;
-    });
     setTheme(newPrefs.theme);
     setTransparency(newPrefs.glassOpacity);
+    if (profile) {
+      updateProfile({ preferences: newPrefs as any });
+    }
   };
 
-  // 2FA update handler
-  const handleUpdate2FA = (enabled: boolean, secret?: string, codes?: string[]) => {
-    setActiveUser((prev) => {
-      const updated: UserProfile = {
-        ...prev,
-        twoFactorEnabled: enabled,
-        twoFactorSecret: secret || prev.twoFactorSecret,
-        backupCodes: codes || prev.backupCodes
-      };
-      setUsers((uList) => uList.map((u) => (u.id === updated.id ? updated : u)));
-      return updated;
-    });
+  // 2FA update
+  const handleUpdate2FA = (enabled: boolean) => {
+    if (profile) {
+      updateProfile({ two_factor_enabled: enabled } as any);
+    }
     addNotification({
       title: enabled ? '2FA Ativado com Sucesso' : '2FA Desativado',
       message: enabled
@@ -532,9 +553,8 @@ export default function App() {
     });
   };
 
-  // Custom Touch Gestures handlers
+  // Gesture handlers
   const handleSwipeLeft = () => {
-    // Next period
     if (currentView === 'month') {
       setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
     } else if (currentView === 'week') {
@@ -545,7 +565,6 @@ export default function App() {
   };
 
   const handleSwipeRight = () => {
-    // Prev period
     if (currentView === 'month') {
       setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
     } else if (currentView === 'week') {
@@ -556,34 +575,62 @@ export default function App() {
   };
 
   const handleSwipeDown = () => {
-    // Pull-to-refresh sync Google
     syncWithGoogleCalendar();
   };
 
   const handleDoubleTap = () => {
-    // Quick create
     setEventToEdit(null);
     setPresetStart(undefined);
     setIsEventModalOpen(true);
   };
 
-  // Theme container classes
+  // Theme classes — modern light palette
   const themeClass =
     theme === 'oled'
       ? 'bg-black text-slate-100'
       : theme === 'light'
-      ? 'bg-slate-100 text-slate-900'
+      ? 'bg-slate-50 text-slate-900'
       : 'bg-slate-950 text-slate-100';
+
+  // Show loading screen
+  if (loading) {
+    return (
+      <div className="w-screen h-screen flex items-center justify-center bg-slate-950">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+          <span className="text-sm text-slate-400 font-medium">Carregando Chronos...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login if not authenticated
+  if (!session || !profile) {
+    return <LoginScreen />;
+  }
+
+  const canEdit = activeUser.role === 'ADMIN' || activeUser.role === 'EDITOR';
+  const isAdmin = activeUser.role === 'ADMIN';
 
   return (
     <div
-      className={`w-screen h-screen flex flex-col overflow-hidden select-none transition-colors duration-300 font-sans ${themeClass}`}
+      className={`w-screen h-screen flex flex-col overflow-hidden select-none transition-colors duration-300 font-sans ${themeClass} ${theme === 'light' ? 'theme-light' : ''}`}
     >
-      {/* Background ambient frosted glow */}
+      {/* Background ambient glow */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px]" />
-        <div className="absolute top-1/2 -right-40 w-96 h-96 bg-purple-600/10 rounded-full blur-[120px]" />
-        <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px]" />
+        {theme === 'light' ? (
+          <>
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-sky-200/40 rounded-full blur-[120px]" />
+            <div className="absolute top-1/2 -right-40 w-96 h-96 bg-emerald-200/30 rounded-full blur-[120px]" />
+            <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-blue-200/30 rounded-full blur-[120px]" />
+          </>
+        ) : (
+          <>
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px]" />
+            <div className="absolute top-1/2 -right-40 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px]" />
+            <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px]" />
+          </>
+        )}
       </div>
 
       {/* Offline Alert Strip */}
@@ -592,7 +639,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <CloudOff className="w-4 h-4 animate-pulse" />
             <span>
-              Modo Offline — Suas alterações serão salvas localmente e sincronizadas com o Google Calendar ao reconectar.
+              Modo Offline — Suas alterações serão salvas localmente e sincronizadas ao reconectar.
             </span>
           </div>
           {offlineQueueCount > 0 && (
@@ -603,13 +650,16 @@ export default function App() {
         </div>
       )}
 
-      {/* Main App Header */}
+      {/* Header */}
       <Header
         currentView={currentView}
-        setCurrentView={setCurrentView}
+        setCurrentView={(v) => {
+          if (v === 'admin' && !isAdmin) return;
+          setCurrentView(v);
+        }}
         activeUser={activeUser}
-        users={users}
-        onSwitchUser={handleSwitchUser}
+        users={[activeUser]}
+        onSwitchUser={() => {}}
         isOnline={isOnline}
         isSyncing={isSyncing}
         onSyncGoogle={syncWithGoogleCalendar}
@@ -644,7 +694,25 @@ export default function App() {
         }}
       />
 
-      {/* Main Interactive Screen with Custom Gestures */}
+      {/* Admin nav button */}
+      {isAdmin && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-slate-200/50 dark:border-white/5 z-20">
+          <button
+            onClick={() => setIsUserManagementOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-400 text-xs font-semibold transition"
+          >
+            Gerenciar Usuários
+          </button>
+          <button
+            onClick={() => signOut()}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-200/50 dark:bg-slate-800/50 hover:bg-slate-300/50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-400 text-xs font-medium transition"
+          >
+            Sair
+          </button>
+        </div>
+      )}
+
+      {/* Main */}
       <main className="flex-1 w-full h-full min-h-0 flex flex-col relative z-10 overflow-hidden">
         <GestureDetector
           enabled={activeUser.preferences.gesturesEnabled}
@@ -684,6 +752,7 @@ export default function App() {
                 setIsEventModalOpen(true);
               }}
               onOpenCreateEvent={(time) => {
+                if (!canEdit) return;
                 setEventToEdit(null);
                 setPresetStart(time);
                 setIsEventModalOpen(true);
@@ -708,6 +777,7 @@ export default function App() {
                 setIsEventModalOpen(true);
               }}
               onOpenCreateEvent={(time) => {
+                if (!canEdit) return;
                 setEventToEdit(null);
                 setPresetStart(time);
                 setIsEventModalOpen(true);
@@ -728,6 +798,7 @@ export default function App() {
                 setIsEventModalOpen(true);
               }}
               onOpenCreateEvent={(time) => {
+                if (!canEdit) return;
                 setEventToEdit(null);
                 setPresetStart(time);
                 setIsEventModalOpen(true);
@@ -746,6 +817,7 @@ export default function App() {
                 setIsEventModalOpen(true);
               }}
               onOpenCreateEvent={(time) => {
+                if (!canEdit) return;
                 setEventToEdit(null);
                 setPresetStart(time);
                 setIsEventModalOpen(true);
@@ -756,7 +828,7 @@ export default function App() {
             />
           )}
 
-          {currentView === 'admin' && (
+          {currentView === 'admin' && isAdmin && (
             <AdminPanel
               onClose={() => setCurrentView('month')}
               offlineQueueCount={offlineQueueCount}
@@ -782,10 +854,8 @@ export default function App() {
         transparency={transparency}
       />
 
-      {/* PWA In-App Install Banner */}
       <PWAInstallBanner />
 
-      {/* Create / Edit Event Modal */}
       <EventModal
         isOpen={isEventModalOpen}
         onClose={() => setIsEventModalOpen(false)}
@@ -799,7 +869,6 @@ export default function App() {
         onAddCategory={handleSaveCategory}
       />
 
-      {/* Homescreen Widgets Drawer */}
       <WidgetDrawer
         isOpen={isWidgetModalOpen}
         onClose={() => setIsWidgetModalOpen(false)}
@@ -810,7 +879,6 @@ export default function App() {
         setWidgetTransparency={setTransparency}
       />
 
-      {/* Real-time Notifications Center */}
       <NotificationsCenter
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
@@ -818,10 +886,12 @@ export default function App() {
         onMarkAllAsRead={() => {
           sounds.playTactileClick();
           setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+          if (profile) markAllNotificationsRead(profile.id);
         }}
         onClearAll={() => {
           sounds.playTactileClick();
           setNotifications([]);
+          if (profile) clearAllNotifications(profile.id);
         }}
         onSelectNotification={(n) => {
           if (n.eventId) {
@@ -835,7 +905,6 @@ export default function App() {
         }}
       />
 
-      {/* System OTA Update Modal */}
       <SystemUpdateModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
@@ -844,14 +913,12 @@ export default function App() {
         onApplyUpdate={handleApplyUpdate}
       />
 
-      {/* Gemini AI Schedule Insights Modal */}
       <GeminiInsightsModal
         isOpen={isGeminiInsightsOpen}
         onClose={() => setIsGeminiInsightsOpen(false)}
         events={events}
       />
 
-      {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -866,22 +933,30 @@ export default function App() {
         onDeleteCategory={handleDeleteCategory}
       />
 
-      {/* Two-Factor Authentication Modal */}
       <TwoFactorModal
         isOpen={is2FAModalOpen}
-        onClose={() => {
-          setIs2FAModalOpen(false);
-          setPendingUserSwitch(null);
-        }}
-        user={pendingUserSwitch || activeUser}
+        onClose={() => setIs2FAModalOpen(false)}
+        user={activeUser}
         mode={twoFactorMode}
-        onSuccess={() => {
-          if (pendingUserSwitch) {
-            completeUserSwitch(pendingUserSwitch);
-          }
-        }}
+        onSuccess={() => {}}
         onUpdateUser2FA={handleUpdate2FA}
       />
+
+      {isAdmin && (
+        <UserManagementModal
+          isOpen={isUserManagementOpen}
+          onClose={() => setIsUserManagementOpen(false)}
+          currentUserRole={activeUser.role}
+        />
+      )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ChronosApp />
+    </AuthProvider>
   );
 }
