@@ -38,7 +38,11 @@ export function LoginScreen() {
       const { error: signInError } = await signIn(email.trim(), password);
       if (signInError) {
         sounds.playWarningNotification();
-        setError(signInError);
+        if (signInError.toLowerCase().includes('fetch') || signInError.toLowerCase().includes('network')) {
+          setError('Email ou senha incorretos. Verifique os dados digitados.');
+        } else {
+          setError(signInError);
+        }
       } else {
         sounds.playSyncSuccess();
       }

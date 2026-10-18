@@ -248,11 +248,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
-    // 3. If in Supabase mode, attempt Supabase cloud login
+    // If it is the admin email and password did not match, return error directly without external fetch
+    if (isAdminEmail) {
+      return { error: 'Email ou senha incorretos. Verifique suas credenciais.' };
+    }
+
+    // 3. If in Supabase mode and not admin email, attempt Supabase cloud login
     if (!isLocalMode) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email: normEmail, password: inputPass });
-        if (!error && data.session && data.user) {
+        if (error) {
+          const msg = error.message || '';
+          if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network')) {
+            return { error: 'Email ou senha incorretos. Verifique suas credenciais.' };
+          }
+          return { error: 'Email ou senha incorretos.' };
+        }
+        if (data.session && data.user) {
           setSession(data.session);
           let loadedProf = await fetchProfile(data.user.id);
           if (!loadedProf) {
@@ -274,8 +286,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return { error: null };
           }
         }
-      } catch (e) {
-        console.warn('Supabase sign-in error:', e);
+      } catch (e: any) {
+        console.warn('Supabase sign-in network error:', e);
+        return { error: 'Email ou senha incorretos. Verifique suas credenciais.' };
       }
     }
 
