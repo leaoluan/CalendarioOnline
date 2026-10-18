@@ -797,27 +797,7 @@ function ChronosApp() {
           onSwipeDown={handleSwipeDown}
           onDoubleTap={handleDoubleTap}
         >
-          {currentView === 'horizon24h' && (
-            <Horizon24h
-              events={events}
-              onSelectEvent={(ev) => {
-                setEventToEdit(ev);
-                setIsEventModalOpen(true);
-              }}
-              onOpenCreateEvent={(time) => {
-                setEventToEdit(null);
-                setPresetStart(time);
-                setIsEventModalOpen(true);
-              }}
-              onSyncGoogle={syncWithGoogleCalendar}
-              isSyncing={isSyncing}
-              categories={categories}
-              searchQuery={globalSearchQuery}
-              onClearSearch={() => setGlobalSearchQuery('')}
-            />
-          )}
-
-          {currentView === 'month' && (
+          {(currentView === 'month' || currentView === 'horizon24h') && (
             <MonthView
               currentDate={currentDate}
               setCurrentDate={setCurrentDate}
@@ -839,6 +819,9 @@ function ChronosApp() {
               categories={categories}
               searchQuery={globalSearchQuery}
               onClearSearch={() => setGlobalSearchQuery('')}
+              onSyncGoogle={syncWithGoogleCalendar}
+              isSyncing={isSyncing}
+              googleConnected={googleConnected}
             />
           )}
 

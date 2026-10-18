@@ -416,28 +416,18 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* View Switcher Tabs (Desktop & Tablet) */}
-        <nav className="flex items-center p-1 rounded-xl bg-slate-800/40 dark:bg-slate-950/40 border border-white/10 backdrop-blur-md overflow-x-auto max-w-full text-xs font-medium">
-          <button
-            onClick={() => { sounds.playTactileClick(); setCurrentView('horizon24h'); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-              currentView === 'horizon24h'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold'
-                : 'text-slate-300 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
-            <span>Horizonte 24h</span>
-          </button>
-
+        <nav className="flex items-center p-0.5 sm:p-1 rounded-xl bg-slate-800/40 dark:bg-slate-950/40 border border-white/10 backdrop-blur-md overflow-x-auto max-w-full text-xs font-medium">
           <button
             onClick={() => { sounds.playTactileClick(); setCurrentView('month'); }}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              currentView === 'month'
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-all ${
+              currentView === 'month' || currentView === 'horizon24h'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold'
                 : 'text-slate-300 hover:text-white hover:bg-white/5'
             }`}
+            title="Mês com painel das Próximas 24h integrado"
           >
-            Mês
+            <CalendarIcon className="w-3.5 h-3.5" />
+            <span>Mês</span>
           </button>
 
           <button
