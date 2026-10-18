@@ -10,11 +10,19 @@ const localAnonKey = typeof window !== 'undefined' ? localStorage.getItem('chron
 export const activeSupabaseUrl = envUrl || localUrl;
 export const activeSupabaseAnonKey = envAnonKey || localAnonKey;
 
-// Flag whether user opted to run in local/offline demo mode without Supabase
-export const isLocalMode = typeof window !== 'undefined' && localStorage.getItem('chronos_local_mode') === 'true';
+const isPlaceholder = (url: string, key: string) => {
+  if (!url || !key) return true;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return true;
+  if (url.includes('seu-projeto-id') || url.includes('placeholder')) return true;
+  if (key.includes('seu_token_publico') || key.includes('placeholder')) return true;
+  return false;
+};
 
-// Config error only occurs if there are no keys AND user hasn't explicitly entered local mode
-export const supabaseConfigError = (!activeSupabaseUrl || !activeSupabaseAnonKey) && !isLocalMode;
+// If no valid cloud DB keys are present (or if using template placeholders), the app runs directly and reliably with local storage
+export const isLocalMode = isPlaceholder(activeSupabaseUrl, activeSupabaseAnonKey) || (typeof window !== 'undefined' && localStorage.getItem('chronos_local_mode') === 'true');
+
+// No config error ever blocks public users
+export const supabaseConfigError = false;
 
 // Helper to save Supabase keys in browser storage
 export function saveCustomSupabaseConfig(url: string, anonKey: string): void {

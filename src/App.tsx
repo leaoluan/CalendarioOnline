@@ -18,9 +18,8 @@ import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { GestureDetector } from './components/GestureDetector';
 import { LoginScreen } from './components/LoginScreen';
 import { UserManagementModal } from './components/UserManagementModal';
-import { SupabaseSetupScreen } from './components/SupabaseSetupScreen';
 import { AuthProvider, useAuth } from './hooks/useAuth';
-import { supabaseConfigError, type Profile } from './lib/supabase';
+import { type Profile } from './lib/supabase';
 
 import {
   CalendarEvent,
@@ -960,10 +959,6 @@ function ChronosApp() {
 }
 
 export default function App() {
-  if (supabaseConfigError) {
-    return <SupabaseSetupScreen />;
-  }
-
   return (
     <AuthProvider>
       <ChronosApp />

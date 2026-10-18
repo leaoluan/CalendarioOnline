@@ -11,16 +11,20 @@ import {
   Shield,
   Smartphone,
   Eye,
+  EyeOff,
   CheckCircle2,
   Tag,
   Plus,
   Trash2,
   Palette,
-  Database
+  HardDrive,
+  KeyRound,
+  Lock,
+  Loader2
 } from 'lucide-react';
 import { UserProfile, UserPreferences, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
-import { isLocalMode, activeSupabaseUrl, resetSupabaseConfig } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -43,9 +47,55 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSaveCategory,
   onDeleteCategory
 }) => {
+  const { changePassword } = useAuth();
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#f97316');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
+
+  // Password change state
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPasswordText, setShowPasswordText] = useState(false);
+  const [passLoading, setPassLoading] = useState(false);
+  const [passError, setPassError] = useState<string | null>(null);
+  const [passSuccess, setPassSuccess] = useState<string | null>(null);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError(null);
+    setPassSuccess(null);
+
+    if (newPassword.length < 6) {
+      setPassError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPassError('A confirmação da nova senha não coincide.');
+      return;
+    }
+
+    setPassLoading(true);
+    const { error } = await changePassword(newPassword, currentPassword);
+    setPassLoading(false);
+
+    if (error) {
+      sounds.playWarningNotification();
+      setPassError(error);
+    } else {
+      sounds.playSyncSuccess();
+      setPassSuccess('Senha alterada com sucesso!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setPassSuccess(null);
+        setIsChangingPassword(false);
+      }, 2000);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -375,41 +425,145 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </div>
 
-          {/* Database & Supabase Connection */}
-          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Change Password in User Profile */}
+          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-white">Alterar Senha de Acesso</h4>
+                  <p className="text-[11px] text-slate-400">
+                    Atualize a senha de login de {user.email || 'sua conta'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playTactileClick();
+                  setIsChangingPassword(!isChangingPassword);
+                  setPassError(null);
+                  setPassSuccess(null);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-semibold transition text-xs"
+              >
+                {isChangingPassword ? 'Cancelar' : 'Alterar Senha'}
+              </button>
+            </div>
+
+            {isChangingPassword && (
+              <form onSubmit={handlePasswordChange} className="mt-2 pt-3 border-t border-slate-700/60 flex flex-col gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Senha Atual <span className="text-slate-500 font-normal">(opcional se for redefinição)</span>
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPasswordText ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Sua senha atual"
+                      className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Nova Senha <span className="text-slate-500 font-normal">(mínimo 6 caracteres)</span>
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPasswordText ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Digite a nova senha"
+                      className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordText(!showPasswordText)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    >
+                      {showPasswordText ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Confirmar Nova Senha
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPasswordText ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repita a nova senha"
+                      className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {passError && (
+                  <div className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px]">
+                    {passError}
+                  </div>
+                )}
+
+                {passSuccess && (
+                  <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    <span>{passSuccess}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={passLoading}
+                  className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/30 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {passLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Salvando senha...</span>
+                    </>
+                  ) : (
+                    <span>Salvar Nova Senha</span>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* Data Storage & Sync Status */}
+          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-                <Database className="w-4 h-4" />
+                <HardDrive className="w-4 h-4" />
               </div>
               <div>
                 <h4 className="font-bold text-white flex items-center gap-2">
-                  Banco de Dados & Supabase
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                    isLocalMode
-                      ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
-                      : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                  }`}>
-                    {isLocalMode ? 'Modo Local / Offline' : 'Conectado ao Supabase'}
+                  Armazenamento de Dados
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                    Sincronizado
                   </span>
                 </h4>
                 <p className="text-[11px] text-slate-400">
-                  {isLocalMode
-                    ? 'Dados salvos localmente no navegador (localStorage)'
-                    : `Conexão ativa: ${activeSupabaseUrl.replace(/https?:\/\//, '').split('.')[0]}...`}
+                  Seus eventos, categorias e preferências são salvos e preservados com segurança.
                 </p>
               </div>
             </div>
-
-            <button
-              onClick={() => {
-                if (confirm('Deseja reconfigurar os dados de conexão do Supabase? A página será recarregada.')) {
-                  resetSupabaseConfig();
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition self-start sm:self-auto"
-            >
-              Reconfigurar Chaves
-            </button>
           </div>
 
         </div>

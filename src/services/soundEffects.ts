@@ -93,8 +93,26 @@ class SoundManager {
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
       osc.connect(gain);
       gain.connect(ctx.destination);
+    } catch (e) {}
+  }
+
+  // Play soft alert for validation warnings
+  playWarningNotification() {
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.setValueAtTime(220, now + 0.08);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
       osc.start(now);
-      osc.stop(now + 0.04);
+      osc.stop(now + 0.2);
     } catch (e) {}
   }
 }

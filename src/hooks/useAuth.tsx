@@ -8,6 +8,8 @@ type AuthContextType = {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, name: string, role?: string) => Promise<{ error: string | null }>;
+  resetPassword: (email: string, newPassword?: string) => Promise<{ error: string | null }>;
+  changePassword: (newPassword: string, oldPassword?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -16,12 +18,47 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const LOCAL_USER_KEY = 'chronos_local_profile';
-const LOCAL_SESSION_KEY = 'chronos_local_session';
+const LOCAL_ACTIVE_SESSION = 'chronos_active_session';
+const ADMIN_PASSWORD_KEY = 'chronos_admin_password';
+const USER_ACCOUNTS_KEY = 'chronos_user_accounts';
 
-const defaultLocalProfile: Profile = {
-  id: 'local-admin-01',
+export const DEFAULT_ADMIN_EMAIL = 'luanleao12@gmail.com';
+export const DEFAULT_ADMIN_PASS = '78da769da';
+
+interface StoredAccount {
+  email: string;
+  name: string;
+  password: string;
+  role: 'ADMIN' | 'EDITOR' | 'VIEWER';
+  createdAt: string;
+}
+
+function getAdminPassword(): string {
+  if (typeof window === 'undefined') return DEFAULT_ADMIN_PASS;
+  return localStorage.getItem(ADMIN_PASSWORD_KEY) || DEFAULT_ADMIN_PASS;
+}
+
+function getStoredAccounts(): Record<string, StoredAccount> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(USER_ACCOUNTS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredAccount(account: StoredAccount): void {
+  if (typeof window === 'undefined') return;
+  const accounts = getStoredAccounts();
+  accounts[account.email.toLowerCase().trim()] = account;
+  localStorage.setItem(USER_ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
+const defaultAdminProfile: Profile = {
+  id: 'admin-01',
   name: 'Luan Leão',
-  email: 'luanleao12@gmail.com',
+  email: DEFAULT_ADMIN_EMAIL,
   role: 'ADMIN',
   avatar: '',
   two_factor_enabled: false,
@@ -41,8 +78,25 @@ const defaultLocalProfile: Profile = {
       doubleTap: 'quick_create'
     }
   },
-  created_at: new Date().toISOString()
+  created_at: '2026-01-01T00:00:00.000Z'
 };
+
+function buildSession(userProf: Profile): Session {
+  return {
+    access_token: `token-${userProf.id}-${Date.now()}`,
+    refresh_token: `refresh-${userProf.id}`,
+    expires_in: 3600 * 24 * 365,
+    token_type: 'bearer',
+    user: {
+      id: userProf.id,
+      email: userProf.email,
+      user_metadata: { name: userProf.name },
+      app_metadata: {},
+      aud: 'authenticated',
+      created_at: userProf.created_at
+    }
+  } as Session;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -58,12 +112,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const p = JSON.parse(stored);
           setProfile(p);
           return p;
-        } catch (_e) {
-          // ignore
+        } catch {
+          // fallback
         }
       }
-      setProfile(defaultLocalProfile);
-      return defaultLocalProfile;
+      return null;
     }
 
     try {
@@ -88,55 +141,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   }, []);
 
-  // Initialization
+  // Initialization: check if there is an active session
   useEffect(() => {
     let mounted = true;
 
-    if (isLocalMode) {
-      const stored = localStorage.getItem(LOCAL_USER_KEY);
-      const activeProf = stored ? JSON.parse(stored) : defaultLocalProfile;
-      const isLoggedOut = localStorage.getItem(LOCAL_SESSION_KEY) === 'logged_out';
-
-      if (!isLoggedOut) {
-        setProfile(activeProf);
-        setSession({
-          access_token: 'local-token',
-          refresh_token: 'local-refresh-token',
-          expires_in: 3600 * 24 * 365,
-          token_type: 'bearer',
-          user: {
-            id: activeProf.id,
-            email: activeProf.email,
-            user_metadata: { name: activeProf.name },
-            app_metadata: {},
-            aud: 'authenticated',
-            created_at: activeProf.created_at
-          }
-        } as Session);
-      } else {
-        setProfile(null);
-        setSession(null);
-      }
-      setLoading(false);
-      return;
-    }
-
     const init = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!mounted) return;
-        setSession(session);
+        const hasActiveSession = typeof window !== 'undefined' && localStorage.getItem(LOCAL_ACTIVE_SESSION) === 'true';
 
-        if (session?.user) {
-          for (let i = 0; i < 3; i++) {
-            const p = await fetchProfile(session.user.id);
-            if (!mounted) return;
-            if (p) break;
-            await new Promise(r => setTimeout(r, 600));
+        if (hasActiveSession) {
+          const storedProfRaw = localStorage.getItem(LOCAL_USER_KEY);
+          if (storedProfRaw) {
+            try {
+              const parsedProf: Profile = JSON.parse(storedProfRaw);
+              if (mounted) {
+                setProfile(parsedProf);
+                setSession(buildSession(parsedProf));
+                setLoading(false);
+                return;
+              }
+            } catch {
+              // ignore
+            }
           }
         }
-      } catch (err) {
-        console.warn('Supabase auth session error:', err);
+
+        // If in Supabase mode and no local session found
+        if (!isLocalMode) {
+          try {
+            const { data: { session: supaSession } } = await supabase.auth.getSession();
+            if (!mounted) return;
+            if (supaSession?.user) {
+              setSession(supaSession);
+              await fetchProfile(supaSession.user.id);
+            }
+          } catch (e) {
+            console.warn('Supabase session load error:', e);
+          }
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -144,198 +186,276 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
-      if (!mounted) return;
-
-      if (event === 'SIGNED_OUT') {
-        profileRef.current = null;
-        setProfile(null);
-        setSession(null);
-        setLoading(false);
-        return;
-      }
-
-      if (event === 'SIGNED_IN' && newSession) {
-        setSession(newSession);
-        return;
-      }
-
-      if (event === 'TOKEN_REFRESHED' && newSession) {
-        setSession(newSession);
-        return;
-      }
-    });
-
     return () => {
       mounted = false;
-      listener.subscription.unsubscribe();
     };
   }, [fetchProfile]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    if (isLocalMode) {
-      localStorage.removeItem(LOCAL_SESSION_KEY);
-      const newProf: Profile = {
-        ...defaultLocalProfile,
-        email: email || defaultLocalProfile.email,
-        name: email.split('@')[0] || defaultLocalProfile.name
-      };
-      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(newProf));
-      setProfile(newProf);
-      setSession({
-        access_token: 'local-token',
-        refresh_token: 'local-refresh-token',
-        expires_in: 3600 * 24 * 365,
-        token_type: 'bearer',
-        user: {
-          id: newProf.id,
-          email: newProf.email,
-          user_metadata: { name: newProf.name },
-          app_metadata: {},
-          aud: 'authenticated',
-          created_at: newProf.created_at
+  // Sign In function: validates against admin credentials (78da769da) or stored user accounts
+  const signIn = useCallback(async (email: string, password: string): Promise<{ error: string | null }> => {
+    const normEmail = email.trim().toLowerCase();
+    const inputPass = password.trim();
+
+    if (!normEmail || !inputPass) {
+      return { error: 'Por favor, informe seu email e sua senha.' };
+    }
+
+    const currentAdminPass = getAdminPassword();
+    const isAdminEmail = normEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || normEmail === 'luanleao12' || normEmail === 'admin';
+
+    // 1. Check Administrator credentials (with custom or default password 78da769da)
+    if (isAdminEmail && inputPass === currentAdminPass) {
+      const stored = localStorage.getItem(LOCAL_USER_KEY);
+      let activeAdminProf = defaultAdminProfile;
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed.email === DEFAULT_ADMIN_EMAIL) {
+            activeAdminProf = parsed;
+          }
+        } catch {
+          // fallback
         }
-      } as Session);
+      }
+      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(activeAdminProf));
+      localStorage.setItem(LOCAL_ACTIVE_SESSION, 'true');
+      setProfile(activeAdminProf);
+      setSession(buildSession(activeAdminProf));
       setLoading(false);
       return { error: null };
     }
 
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return { error: error.message };
+    // 2. Check Stored User Accounts
+    const accounts = getStoredAccounts();
+    const existing = accounts[normEmail];
+    if (existing && existing.password === inputPass) {
+      const userProf: Profile = {
+        id: `user-${normEmail}`,
+        name: existing.name || normEmail.split('@')[0],
+        email: existing.email,
+        role: existing.role || 'USER',
+        avatar: '',
+        two_factor_enabled: false,
+        two_factor_secret: null,
+        preferences: defaultAdminProfile.preferences,
+        created_at: existing.createdAt || new Date().toISOString()
+      };
+      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(userProf));
+      localStorage.setItem(LOCAL_ACTIVE_SESSION, 'true');
+      setProfile(userProf);
+      setSession(buildSession(userProf));
+      setLoading(false);
+      return { error: null };
+    }
 
-      setSession(data.session);
-
-      if (data.user) {
-        let loadedProfile: Profile | null = null;
-        for (let i = 0; i < 3; i++) {
-          loadedProfile = await fetchProfile(data.user.id);
-          if (loadedProfile) break;
-          await new Promise(r => setTimeout(r, 600));
-        }
-
-        if (!loadedProfile) {
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .insert({
+    // 3. If in Supabase mode, attempt Supabase cloud login
+    if (!isLocalMode) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: normEmail, password: inputPass });
+        if (!error && data.session && data.user) {
+          setSession(data.session);
+          let loadedProf = await fetchProfile(data.user.id);
+          if (!loadedProf) {
+            const { error: insErr } = await supabase.from('profiles').insert({
               id: data.user.id,
-              email: data.user.email || email,
-              name: data.user.user_metadata?.name || email.split('@')[0],
-              role: 'ADMIN',
+              email: data.user.email || normEmail,
+              name: data.user.user_metadata?.name || normEmail.split('@')[0],
+              role: 'ADMIN'
             });
-          if (!insertError) {
-            loadedProfile = await fetchProfile(data.user.id);
+            if (!insErr) {
+              loadedProf = await fetchProfile(data.user.id);
+            }
+          }
+          if (loadedProf) {
+            localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(loadedProf));
+            localStorage.setItem(LOCAL_ACTIVE_SESSION, 'true');
+            setProfile(loadedProf);
+            setLoading(false);
+            return { error: null };
           }
         }
-
-        if (loadedProfile) {
-          setLoading(false);
-          return { error: null };
-        } else {
-          return { error: 'Não foi possível carregar o perfil do usuário.' };
-        }
+      } catch (e) {
+        console.warn('Supabase sign-in error:', e);
       }
-
-      return { error: null };
-    } catch (error) {
-      console.error('Sign-in request failed:', error);
-      return {
-        error: 'Não foi possível acessar o Supabase. Confira se VITE_SUPABASE_URL é a URL da API do projeto (terminando em .supabase.co) e VITE_SUPABASE_ANON_KEY está configurada.',
-      };
     }
+
+    return { error: 'Email ou senha incorretos. Verifique suas credenciais.' };
   }, [fetchProfile]);
 
-  const signUp = useCallback(async (email: string, password: string, name: string, role?: string) => {
-    if (isLocalMode) {
-      const newProf: Profile = {
-        ...defaultLocalProfile,
-        id: `local-${Date.now()}`,
-        name: name || email.split('@')[0],
-        email: email,
-        role: (role as any) || 'ADMIN'
-      };
-      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(newProf));
-      localStorage.removeItem(LOCAL_SESSION_KEY);
-      setProfile(newProf);
-      return { error: null };
+  // Sign Up function: registers a new account
+  const signUp = useCallback(async (email: string, password: string, name: string, role?: string): Promise<{ error: string | null }> => {
+    const normEmail = email.trim().toLowerCase();
+    const inputPass = password.trim();
+
+    if (!normEmail || !inputPass) {
+      return { error: 'Preencha todos os campos obrigatórios.' };
     }
 
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { name } },
-      });
-      if (error) return { error: error.message };
+    if (inputPass.length < 6) {
+      return { error: 'A senha deve conter no mínimo 6 caracteres.' };
+    }
 
-      if (data.user && role) {
-        await supabase
-          .from('profiles')
-          .update({ role })
-          .eq('id', data.user.id);
+    const accounts = getStoredAccounts();
+    if (accounts[normEmail] || normEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+      return { error: 'Este email já está cadastrado. Alterne para a aba "Entrar".' };
+    }
+
+    const newAccount: StoredAccount = {
+      email: normEmail,
+      name: name.trim() || normEmail.split('@')[0],
+      password: inputPass,
+      role: (role as any) || 'ADMIN',
+      createdAt: new Date().toISOString()
+    };
+    saveStoredAccount(newAccount);
+
+    if (!isLocalMode) {
+      try {
+        await supabase.auth.signUp({
+          email: normEmail,
+          password: inputPass,
+          options: { data: { name: newAccount.name } }
+        });
+      } catch (e) {
+        console.warn('Supabase signUp warning:', e);
       }
-
-      return { error: null };
-    } catch (err: any) {
-      return { error: err?.message || 'Falha no cadastro com o Supabase' };
     }
+
+    return { error: null };
   }, []);
 
-  const signOut = useCallback(async () => {
-    if (isLocalMode) {
-      localStorage.setItem(LOCAL_SESSION_KEY, 'logged_out');
-      setSession(null);
-      setProfile(null);
-      return;
+  // Change Password within user profile / settings
+  const changePassword = useCallback(async (newPassword: string, oldPassword?: string): Promise<{ error: string | null }> => {
+    const newPass = newPassword.trim();
+    if (newPass.length < 6) {
+      return { error: 'A nova senha deve conter pelo menos 6 caracteres.' };
     }
 
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.warn('Sign out error:', e);
+    const currentEmail = (profile?.email || DEFAULT_ADMIN_EMAIL).toLowerCase().trim();
+
+    // Verify old password if specified
+    if (oldPassword && oldPassword.trim()) {
+      const activePass = currentEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() ? getAdminPassword() : getStoredAccounts()[currentEmail]?.password;
+      if (activePass && oldPassword.trim() !== activePass) {
+        return { error: 'A senha atual informada está incorreta.' };
+      }
+    }
+
+    // Update password in persistent storage
+    if (currentEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || profile?.role === 'ADMIN') {
+      localStorage.setItem(ADMIN_PASSWORD_KEY, newPass);
+    }
+
+    const accounts = getStoredAccounts();
+    if (accounts[currentEmail]) {
+      accounts[currentEmail].password = newPass;
+      localStorage.setItem(USER_ACCOUNTS_KEY, JSON.stringify(accounts));
+    } else {
+      accounts[currentEmail] = {
+        email: currentEmail,
+        name: profile?.name || currentEmail.split('@')[0],
+        password: newPass,
+        role: profile?.role || 'ADMIN',
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(USER_ACCOUNTS_KEY, JSON.stringify(accounts));
+    }
+
+    // Also update in Supabase if logged in with Supabase
+    if (!isLocalMode && session?.user) {
+      try {
+        await supabase.auth.updateUser({ password: newPass });
+      } catch (e) {
+        console.warn('Supabase updateUser password notice:', e);
+      }
+    }
+
+    return { error: null };
+  }, [profile, session]);
+
+  // Reset Password for recovery on login screen
+  const resetPassword = useCallback(async (email: string, newPassword?: string): Promise<{ error: string | null }> => {
+    const normEmail = email.trim().toLowerCase();
+    const newPass = (newPassword && newPassword.trim()) ? newPassword.trim() : DEFAULT_ADMIN_PASS;
+
+    if (newPass.length < 6) {
+      return { error: 'A nova senha deve ter no mínimo 6 caracteres.' };
+    }
+
+    if (normEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || normEmail === 'admin' || normEmail === 'luanleao12') {
+      localStorage.setItem(ADMIN_PASSWORD_KEY, newPass);
+    }
+
+    const accounts = getStoredAccounts();
+    if (accounts[normEmail]) {
+      accounts[normEmail].password = newPass;
+      localStorage.setItem(USER_ACCOUNTS_KEY, JSON.stringify(accounts));
+    } else {
+      accounts[normEmail] = {
+        email: normEmail,
+        name: normEmail.split('@')[0],
+        password: newPass,
+        role: 'ADMIN',
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(USER_ACCOUNTS_KEY, JSON.stringify(accounts));
+    }
+
+    if (!isLocalMode) {
+      try {
+        await supabase.auth.resetPasswordForEmail(normEmail, {
+          redirectTo: window.location.origin
+        });
+      } catch (e) {
+        console.warn('Supabase resetPassword error:', e);
+      }
+    }
+
+    return { error: null };
+  }, []);
+
+  // Sign Out: clear session and return to Login Screen
+  const signOut = useCallback(async () => {
+    localStorage.removeItem(LOCAL_ACTIVE_SESSION);
+    if (!isLocalMode) {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn('Sign out error:', e);
+      }
     }
     setSession(null);
     setProfile(null);
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    if (isLocalMode) {
-      const stored = localStorage.getItem(LOCAL_USER_KEY);
-      if (stored) {
+    const stored = localStorage.getItem(LOCAL_USER_KEY);
+    if (stored) {
+      try {
         setProfile(JSON.parse(stored));
+      } catch {
+        // ignore
       }
-      return;
     }
-    if (session?.user) {
+    if (!isLocalMode && session?.user) {
       await fetchProfile(session.user.id);
     }
   }, [session, fetchProfile]);
 
   const updateProfile = useCallback(async (updates: Partial<Profile>) => {
-    if (isLocalMode) {
-      setProfile((prev) => {
-        if (!prev) return null;
-        const updated = { ...prev, ...updates };
-        localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(updated));
-        return updated;
-      });
-      return;
-    }
+    setProfile((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, ...updates };
+      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(updated));
+      return updated;
+    });
 
-    if (!profile) return;
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', profile.id);
-
-      if (error) {
-        console.error('Error updating profile:', error);
-        return;
+    if (!isLocalMode && profile?.id) {
+      try {
+        await supabase.from('profiles').update(updates).eq('id', profile.id);
+      } catch (e) {
+        console.error('Profile update failed:', e);
       }
-      setProfile((prev) => (prev ? { ...prev, ...updates } : null));
-    } catch (e) {
-      console.error('Profile update failed:', e);
     }
   }, [profile]);
 
@@ -347,6 +467,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         signIn,
         signUp,
+        resetPassword,
+        changePassword,
         signOut,
         refreshProfile,
         updateProfile,
