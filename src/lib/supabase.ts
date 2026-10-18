@@ -1,20 +1,65 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Read from build-time environment variables or browser localStorage configuration
+const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
+const envAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
 
-export const supabaseConfigError = !supabaseUrl || !supabaseAnonKey;
+const localUrl = typeof window !== 'undefined' ? localStorage.getItem('chronos_supabase_url') || '' : '';
+const localAnonKey = typeof window !== 'undefined' ? localStorage.getItem('chronos_supabase_anon_key') || '' : '';
+
+export const activeSupabaseUrl = envUrl || localUrl;
+export const activeSupabaseAnonKey = envAnonKey || localAnonKey;
+
+// Flag whether user opted to run in local/offline demo mode without Supabase
+export const isLocalMode = typeof window !== 'undefined' && localStorage.getItem('chronos_local_mode') === 'true';
+
+// Config error only occurs if there are no keys AND user hasn't explicitly entered local mode
+export const supabaseConfigError = (!activeSupabaseUrl || !activeSupabaseAnonKey) && !isLocalMode;
+
+// Helper to save Supabase keys in browser storage
+export function saveCustomSupabaseConfig(url: string, anonKey: string): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('chronos_supabase_url', url.trim());
+    localStorage.setItem('chronos_supabase_anon_key', anonKey.trim());
+    localStorage.removeItem('chronos_local_mode');
+    window.location.reload();
+  }
+}
+
+// Helper to enable local standalone demo mode
+export function enableLocalMode(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('chronos_local_mode', 'true');
+    window.location.reload();
+  }
+}
+
+// Helper to clear custom keys and reset
+export function resetSupabaseConfig(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('chronos_supabase_url');
+    localStorage.removeItem('chronos_supabase_anon_key');
+    localStorage.removeItem('chronos_local_mode');
+    window.location.reload();
+  }
+}
+
+// Create Supabase client safely
+const validUrl = activeSupabaseUrl.startsWith('http')
+  ? activeSupabaseUrl
+  : 'https://placeholder-project.supabase.co';
 
 export const supabase = createClient(
-  supabaseUrl || 'https://configuration-missing.invalid',
-  supabaseAnonKey || 'configuration-missing',
+  validUrl,
+  activeSupabaseAnonKey || 'placeholder-anon-key',
   {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  }
+);
 
 export type Profile = {
   id: string;

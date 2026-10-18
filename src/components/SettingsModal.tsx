@@ -15,10 +15,12 @@ import {
   Tag,
   Plus,
   Trash2,
-  Palette
+  Palette,
+  Database
 } from 'lucide-react';
 import { UserProfile, UserPreferences, CategoryDefinition } from '../types/calendar';
 import { sounds } from '../services/soundEffects';
+import { isLocalMode, activeSupabaseUrl, resetSupabaseConfig } from '../lib/supabase';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -370,6 +372,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold transition"
             >
               {user.twoFactorEnabled ? 'Gerenciar' : 'Ativar'}
+            </button>
+          </div>
+
+          {/* Database & Supabase Connection */}
+          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <Database className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-bold text-white flex items-center gap-2">
+                  Banco de Dados & Supabase
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                    isLocalMode
+                      ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                      : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                  }`}>
+                    {isLocalMode ? 'Modo Local / Offline' : 'Conectado ao Supabase'}
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  {isLocalMode
+                    ? 'Dados salvos localmente no navegador (localStorage)'
+                    : `Conexão ativa: ${activeSupabaseUrl.replace(/https?:\/\//, '').split('.')[0]}...`}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                if (confirm('Deseja reconfigurar os dados de conexão do Supabase? A página será recarregada.')) {
+                  resetSupabaseConfig();
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition self-start sm:self-auto"
+            >
+              Reconfigurar Chaves
             </button>
           </div>
 
