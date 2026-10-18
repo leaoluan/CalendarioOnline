@@ -53,11 +53,19 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
+export const setCachedAccessToken = (token: string | null) => {
+  cachedAccessToken = token;
+};
+
 export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
 
 export const logoutGoogle = async () => {
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch (e) {
+    console.warn('SignOut error:', e);
+  }
   cachedAccessToken = null;
 };

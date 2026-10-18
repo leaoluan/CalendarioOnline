@@ -39,8 +39,8 @@ export function toGoogleEventResource(event: CalendarEvent) {
 // Convert Google Calendar API event to local CalendarEvent
 export function fromGoogleEvent(gEvent: any): CalendarEvent {
   const isAllDay = !!gEvent.start?.date;
-  const start = gEvent.start?.dateTime || gEvent.start?.date || new Date().toISOString();
-  const end = gEvent.end?.dateTime || gEvent.end?.date || new Date().toISOString();
+  const start = gEvent.start?.dateTime || (gEvent.start?.date ? `${gEvent.start.date}T00:00:00.000Z` : new Date().toISOString());
+  const end = gEvent.end?.dateTime || (gEvent.end?.date ? `${gEvent.end.date}T23:59:59.999Z` : new Date().toISOString());
 
   // Determine category based on summary or attendees
   let category: string = 'meeting';
@@ -123,7 +123,7 @@ export async function fetchGoogleCalendarEvents(
   }
 
   const data = await response.json();
-  const items = data.items || [];
+  const items = (data.items || []).filter((item: any) => item.status !== 'cancelled');
   return items.map(fromGoogleEvent);
 }
 

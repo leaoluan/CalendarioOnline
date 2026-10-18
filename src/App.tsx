@@ -49,7 +49,8 @@ import {
   initAuth,
   googleSignIn,
   logoutGoogle,
-  getAccessToken
+  getAccessToken,
+  setCachedAccessToken
 } from './services/firebaseAuth';
 import {
   fetchGoogleCalendarEvents,
@@ -129,6 +130,7 @@ function ChronosApp() {
 
   // Google Calendar integration
   const [googleConnected, setGoogleConnected] = useState<boolean>(false);
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
@@ -187,9 +189,13 @@ function ChronosApp() {
       if (token?.accessToken) {
         setGoogleConnected(true);
         setAccessToken(token.accessToken);
+        setCachedAccessToken(token.accessToken);
+        setGoogleEmail(token.email || null);
       } else {
         setGoogleConnected(false);
         setAccessToken(null);
+        setCachedAccessToken(null);
+        setGoogleEmail(null);
       }
     })();
   }, [profile?.id]);
@@ -199,12 +205,14 @@ function ChronosApp() {
     let unsubscribe: (() => void) | undefined;
     try {
       unsubscribe = initAuth(
-        (_user, token) => {
+        (user, token) => {
           setAccessToken(token);
+          setCachedAccessToken(token);
           setGoogleConnected(true);
+          if (user?.email) setGoogleEmail(user.email);
         },
         () => {
-          setAccessToken(null);
+          // Do not wipe valid stored token if one exists in memory/storage
         }
       );
     } catch (e) {
@@ -260,14 +268,22 @@ function ChronosApp() {
     let token = accessToken;
     if (!token) {
       token = await getAccessToken();
-      if (token) setAccessToken(token);
+    }
+    if (!token && profile?.id) {
+      const saved = await loadGoogleToken(profile.id);
+      if (saved?.accessToken) {
+        token = saved.accessToken;
+        setAccessToken(token);
+        setCachedAccessToken(token);
+        if (saved.email) setGoogleEmail(saved.email);
+      }
     }
 
     if (!token) return;
 
     setIsSyncing(true);
     try {
-      const queueResult = await processOfflineQueue(token);
+      await processOfflineQueue(token);
       setOfflineQueueCount(getOfflineMutations().length);
 
       const gEvents = await fetchGoogleCalendarEvents(token);
@@ -283,20 +299,29 @@ function ChronosApp() {
 
       addNotification({
         title: 'Google Calendar Sincronizado',
-        message: `Sincronização concluída com sucesso (${gEvents?.length || 0} eventos).`,
+        message: `Sincronização concluída com sucesso (${gEvents?.length || 0} eventos sincronizados).`,
         type: 'sync'
       });
     } catch (err: any) {
       console.error('Google Calendar sync failed:', err);
-      addNotification({
-        title: 'Aviso de Sincronização',
-        message: 'Não foi possível contatar o Google Calendar. O cache local está ativo.',
-        type: 'sync'
-      });
+      const isExpired = err.message && (err.message.includes('401') || err.message.includes('UNAUTHENTICATED'));
+      if (isExpired) {
+        addNotification({
+          title: 'Sessão Google Expirada',
+          message: 'A permissão do Google Calendar expirou. Clique em "Conectar Google" para renovar o acesso.',
+          type: 'security'
+        });
+      } else {
+        addNotification({
+          title: 'Aviso de Sincronização',
+          message: 'Não foi possível contatar o Google Calendar. O cache local continua ativo.',
+          type: 'sync'
+        });
+      }
     } finally {
       setIsSyncing(false);
     }
-  }, [isOnline, accessToken, addNotification]);
+  }, [isOnline, accessToken, profile, addNotification]);
 
   // Auto retry when coming back online
   useEffect(() => {
@@ -359,8 +384,10 @@ function ChronosApp() {
       const result = await googleSignIn();
       if (result && profile) {
         setAccessToken(result.accessToken);
+        setCachedAccessToken(result.accessToken);
         setGoogleConnected(true);
-        // Save token per-user in Supabase
+        setGoogleEmail(result.user.email || null);
+        // Save token per-user
         await saveGoogleToken(profile.id, result.accessToken, null, result.user.email || null);
         sounds.playSyncSuccess();
         addNotification({
@@ -372,6 +399,19 @@ function ChronosApp() {
       }
     } catch (err: any) {
       console.error('Sign-in failed:', err);
+      let errorMsg = 'Não foi possível conectar à conta Google.';
+      if (err.code === 'auth/popup-closed-by-user') {
+        errorMsg = 'A janela de autenticação do Google foi fechada antes de autorizar.';
+      } else if (err.code === 'auth/popup-blocked') {
+        errorMsg = 'O pop-up de login foi bloqueado pelo navegador. Por favor, autorize pop-ups para este site.';
+      } else if (err.message) {
+        errorMsg = `Falha na conexão: ${err.message}`;
+      }
+      addNotification({
+        title: 'Aviso Google Calendar',
+        message: errorMsg,
+        type: 'security'
+      });
     }
   };
 
@@ -383,6 +423,8 @@ function ChronosApp() {
     await deleteGoogleToken(profile.id);
     setGoogleConnected(false);
     setAccessToken(null);
+    setCachedAccessToken(null);
+    setGoogleEmail(null);
     addNotification({
       title: 'Google Calendar Desconectado',
       message: 'A sincronização com Google foi desativada para sua conta.',
@@ -395,14 +437,28 @@ function ChronosApp() {
     const isNew = !events.some((e) => e.id === event.id);
 
     if (event.isGoogleSynced && googleConnected) {
-      if (isOnline && accessToken) {
+      let activeToken = accessToken;
+      if (!activeToken) {
+        activeToken = await getAccessToken();
+      }
+      if (!activeToken && profile?.id) {
+        const saved = await loadGoogleToken(profile.id);
+        if (saved?.accessToken) {
+          activeToken = saved.accessToken;
+          setAccessToken(activeToken);
+          setCachedAccessToken(activeToken);
+          if (saved.email) setGoogleEmail(saved.email);
+        }
+      }
+
+      if (isOnline && activeToken) {
         try {
           if (isNew) {
-            const created = await insertGoogleCalendarEvent(accessToken, event);
+            const created = await insertGoogleCalendarEvent(activeToken, event);
             event.googleEventId = created.googleEventId;
             event.syncStatus = 'synced';
           } else if (event.googleEventId) {
-            await updateGoogleCalendarEvent(accessToken, event.googleEventId, event);
+            await updateGoogleCalendarEvent(activeToken, event.googleEventId, event);
             event.syncStatus = 'synced';
           }
         } catch (err) {
@@ -449,9 +505,23 @@ function ChronosApp() {
   // Event Delete Handler
   const handleDeleteEvent = async (event: CalendarEvent) => {
     if (event.isGoogleSynced && event.googleEventId && googleConnected) {
-      if (isOnline && accessToken) {
+      let activeToken = accessToken;
+      if (!activeToken) {
+        activeToken = await getAccessToken();
+      }
+      if (!activeToken && profile?.id) {
+        const saved = await loadGoogleToken(profile.id);
+        if (saved?.accessToken) {
+          activeToken = saved.accessToken;
+          setAccessToken(activeToken);
+          setCachedAccessToken(activeToken);
+          if (saved.email) setGoogleEmail(saved.email);
+        }
+      }
+
+      if (isOnline && activeToken) {
         try {
-          await deleteGoogleCalendarEvent(accessToken, event.googleEventId);
+          await deleteGoogleCalendarEvent(activeToken, event.googleEventId);
         } catch (err) {
           queueOfflineMutation({
             id: `mut-${Date.now()}`,
@@ -936,6 +1006,13 @@ function ChronosApp() {
         categories={categories}
         onSaveCategory={handleSaveCategory}
         onDeleteCategory={handleDeleteCategory}
+        googleConnected={googleConnected}
+        googleEmail={googleEmail}
+        onGoogleSignIn={handleGoogleSignIn}
+        onGoogleDisconnect={handleGoogleDisconnect}
+        onSyncGoogle={syncWithGoogleCalendar}
+        isSyncing={isSyncing}
+        lastSyncTime={lastSyncTime}
       />
 
       <TwoFactorModal
